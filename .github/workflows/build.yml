@@ -35,6 +35,17 @@ jobs:
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+      - name: Bump version (auto-increment)
+        run: |
+          sed -i "s/versionCode = [0-9]*/versionCode = $(( 240 + ${{ github.run_number }} ))/" app/build.gradle.kts
+          sed -i 's/versionName = "[^"]*"/versionName = "2.4.0-ci.${{ github.run_number }}"/' app/build.gradle.kts
+          grep -E 'versionCode|versionName' app/build.gradle.kts
+
+      - name: Set up stable debug keystore
+        run: |
+          mkdir -p ~/.android
+          cp keystores/debug.keystore ~/.android/debug.keystore
+
       - name: Build
         run: |
           chmod +x gradlew
@@ -44,7 +55,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: WoW Forever（Battle.net 登录）
+          tag_name: build-${{ github.run_number }}-${{ github.run_attempt }}
+          name: WoW Forever（Battle.net 登录）build ${{ github.run_number }}
           files: WoW-Forever.apk
           prerelease: true

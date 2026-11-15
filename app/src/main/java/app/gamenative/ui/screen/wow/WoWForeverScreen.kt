@@ -1330,6 +1330,7 @@ private fun bnetContainerConfig(gameRoot: File, gpu: GpuProfile, screenSize: Str
         put("name", "Battle.net")
         put("executablePath", executablePath)
         put("execArgs", "")
+        put("displayRendererMode", "gl") // CEF 用 OpenGL 渲染，不用 Vulkan（否则暗屏空窗口）
         // 战网是 x86-64 CEF UI，不能复用游戏的 TU_DEBUG=noconform/sysmem（8 Elite 会闪屏）；
         // 换 CEF 友好的 nolrz + 关 BCN compute + xinput 桥接（参照 WoWBox box_spec.json env.base）。
         val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
