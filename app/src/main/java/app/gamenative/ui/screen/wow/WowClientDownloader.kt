@@ -333,6 +333,7 @@ object WowClientDownloader {
     internal fun defaultBranch() = when (Locale.getDefault().country.uppercase(Locale.ROOT)) {
         "KR" -> "kr"
         "TW", "HK" -> "tw"
+        "CN" -> "cn"
         in EU_COUNTRIES -> "eu"
         else -> "us"
     }

@@ -981,7 +981,7 @@ private fun prefs(context: Context) = context.getSharedPreferences("wow_forever"
  * login, so the launcher writes it to Config.wtf as the portal.
  */
 enum class GameRegion(val label: String) {
-    US("Americas"), EU("Europe"), KR("Korea"), TW("Taiwan");
+    US("Americas"), EU("Europe"), KR("Korea"), TW("Taiwan"), CN("China");
 
     /** The region's name in Blizzard's patch server tables. */
     val cdnRegion get() = name.lowercase()
