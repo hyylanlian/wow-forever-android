@@ -1330,7 +1330,13 @@ private fun bnetContainerConfig(gameRoot: File, gpu: GpuProfile, screenSize: Str
         put("name", "Battle.net")
         put("executablePath", executablePath)
         put("execArgs", "")
-        put("envVars", getString("envVars") + BNET_ENV)
+        // 战网是 x86-64 CEF UI，不能复用游戏的 TU_DEBUG=noconform/sysmem（8 Elite 会闪屏）；
+        // 换 CEF 友好的 nolrz + 关 BCN compute + xinput 桥接（参照 WoWBox box_spec.json env.base）。
+        val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
+        put("envVars",
+            "WINEESYNC=0 WINEDLLOVERRIDES=xinput1_3=n,b;xinput1_4=n,b;windows.gaming.input=d " +
+            "SDL_JOYSTICK_RAWINPUT=0 TU_DEBUG=nolrz DISABLE_BCN_COMPUTE=1 BCN_COMPUTE_AUTO=1 " +
+            "MESA_VK_WSI_PRESENT_MODE=mailbox ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv" + BNET_ENV)
     }
 }
 
