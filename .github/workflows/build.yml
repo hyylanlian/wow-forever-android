@@ -26,14 +26,16 @@ jobs:
             "platforms;android-36" "build-tools;35.0.0" "ndk;27.3.13750724" "cmake;3.22.1" > /dev/null
 
       - name: Fetch bundled components
-        run: tools/fetch_components.sh
+        run: bash tools/fetch_components.sh
 
       # Secrets Gradle 插件没有 local.properties 不配置项目
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Build
-        run: ./gradlew --no-daemon :app:assembleModernDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleModernDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
