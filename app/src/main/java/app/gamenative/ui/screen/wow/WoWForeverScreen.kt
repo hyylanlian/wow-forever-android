@@ -1330,7 +1330,7 @@ private fun bnetContainerConfig(gameRoot: File, gpu: GpuProfile, screenSize: Str
         put("name", "Battle.net")
         put("executablePath", executablePath)
         put("execArgs", "")
-        put("displayRendererMode", "gl") // CEF 用 OpenGL 渲染，不用 Vulkan（否则暗屏空窗口）
+        put("displayRendererMode", "vulkan") // 跟游戏一致用 Vulkan（游戏能正常渲染，战网也用 vulkan）
         put("dxwrapper", "dxvk-2.4.1-1") // 战网是 x86-64 CEF，用通用 x86-64 DXVK，不是游戏的 ARM64EC DXVK
         put("dxwrapperConfig", "version=2.4.1-1")
         // 战网是 x86-64 CEF UI，不能复用游戏的 TU_DEBUG=noconform/sysmem（8 Elite 会闪屏）；
