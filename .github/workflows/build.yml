@@ -11,17 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reclaim disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: false
-          swap-storage: true
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -29,12 +18,18 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK platform, build-tools, NDK
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-36" "build-tools;34.0.0" "ndk;27.3.13750724"
+          export ANDROID_SDK_ROOT="$RUNNER_TEMP/android-sdk"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          curl -fL -o "$RUNNER_TEMP/ct.zip" \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q "$RUNNER_TEMP/ct.zip" -d "$ANDROID_SDK_ROOT/cmdline-tools"
+          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" "build-tools;34.0.0" "ndk;27.3.13750724"
 
       - name: Download bundled components (proton/dxvk/turnip)
         run: bash tools/fetch_components.sh
