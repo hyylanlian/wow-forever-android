@@ -472,9 +472,11 @@ fun preLaunchApp(
 
         try {
             val imageFsArchive = "imagefs_bionic.txz"
-            if (!File(context.filesDir, imageFsArchive).exists() && context.assets.list("")?.contains(imageFsArchive) != true) {
+            app.gamenative.utils.SharedCache.migrate(context)
+            val imageFsFile = File(app.gamenative.utils.SharedCache.root(context), imageFsArchive)
+            if (!imageFsFile.exists() && context.assets.list("")?.contains(imageFsArchive) != true) {
                 setLoadingMessage("Downloading first-time files")
-                Net.fetchFileWithFallback(imageFsArchive, File(context.filesDir, imageFsArchive), setLoadingProgress)
+                Net.fetchFileWithFallback(imageFsArchive, imageFsFile, setLoadingProgress)
             }
         } catch (e: Exception) {
             Timber.tag("preLaunchApp").e(e, "File download failed")

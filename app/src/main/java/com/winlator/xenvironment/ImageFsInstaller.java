@@ -126,7 +126,7 @@ public abstract class ImageFsInstaller {
 
             final byte compressionRatio = 22;
             String imagefsFile = containerVariant.equals(Container.GLIBC) ? "imagefs_gamenative.txz" : "imagefs_bionic.txz";
-            File downloaded = new File(imageFs.getFilesDir(), imagefsFile);
+            File downloaded = new File(app.gamenative.utils.SharedCache.root(context), imagefsFile);
 
 
             boolean success = false;

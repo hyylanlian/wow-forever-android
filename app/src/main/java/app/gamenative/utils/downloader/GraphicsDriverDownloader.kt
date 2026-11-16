@@ -3,6 +3,7 @@ package app.gamenative.utils.downloader
 import android.content.Context
 import app.gamenative.BuildConfig
 import app.gamenative.utils.Net
+import app.gamenative.utils.SharedCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -63,7 +64,7 @@ object GraphicsDriverDownloader {
         // Check if already downloaded and cached
 
         // Use the actual filename from manifest (handles .tar.xz case)
-        val destFile = File(context.filesDir, "$GRAPHICS_DRIVER_CACHE_DIR/${component.name}")
+        val destFile = File(SharedCache.root(context), "$GRAPHICS_DRIVER_CACHE_DIR/${component.name}")
         if (destFile.exists() && destFile.length() > 0) {
             Timber.d("Using cached graphics driver: $componentId at ${destFile.absolutePath}")
             return@withContext destFile
@@ -107,7 +108,7 @@ object GraphicsDriverDownloader {
      * Clears the cached graphics driver files to free up space.
      */
     fun clearCache(context: Context) {
-        val cacheDir = File(context.filesDir, GRAPHICS_DRIVER_CACHE_DIR)
+        val cacheDir = File(SharedCache.root(context), GRAPHICS_DRIVER_CACHE_DIR)
         if (cacheDir.exists() && cacheDir.isDirectory) {
             cacheDir.listFiles()?.forEach { it.delete() }
             Timber.i("Cleared graphics driver cache")
@@ -118,7 +119,7 @@ object GraphicsDriverDownloader {
      * Gets the total size of cached graphics driver files.
      */
     fun getCacheSize(context: Context): Long {
-        val cacheDir = File(context.filesDir, GRAPHICS_DRIVER_CACHE_DIR)
+        val cacheDir = File(SharedCache.root(context), GRAPHICS_DRIVER_CACHE_DIR)
         if (!cacheDir.exists() || !cacheDir.isDirectory) return 0L
 
         return cacheDir.listFiles()?.sumOf { it.length() } ?: 0L

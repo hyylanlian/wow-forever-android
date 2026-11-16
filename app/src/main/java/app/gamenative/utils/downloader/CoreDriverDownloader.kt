@@ -3,6 +3,7 @@ package app.gamenative.utils.downloader
 import android.content.Context
 import app.gamenative.BuildConfig
 import app.gamenative.utils.Net
+import app.gamenative.utils.SharedCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -64,7 +65,7 @@ object CoreDriverDownloader {
 
         // Modern variant: download from server
         // Check if already downloaded and cached
-        val destFile = File(context.filesDir, "$CORE_DRIVERS_CACHE_DIR/$componentName")
+        val destFile = File(SharedCache.root(context), "$CORE_DRIVERS_CACHE_DIR/$componentName")
         if (destFile.exists() && destFile.length() > 0) {
             Timber.d("Using cached core driver: $componentName at ${destFile.absolutePath}")
             return@withContext destFile
@@ -108,7 +109,7 @@ object CoreDriverDownloader {
      * Clears the cached core driver files to free up space.
      */
     fun clearCache(context: Context) {
-        val cacheDir = File(context.filesDir, CORE_DRIVERS_CACHE_DIR)
+        val cacheDir = File(SharedCache.root(context), CORE_DRIVERS_CACHE_DIR)
         if (cacheDir.exists() && cacheDir.isDirectory) {
             cacheDir.listFiles()?.forEach { it.delete() }
             Timber.i("Cleared core driver cache")
@@ -119,7 +120,7 @@ object CoreDriverDownloader {
      * Gets the total size of cached core driver files.
      */
     fun getCacheSize(context: Context): Long {
-        val cacheDir = File(context.filesDir, CORE_DRIVERS_CACHE_DIR)
+        val cacheDir = File(SharedCache.root(context), CORE_DRIVERS_CACHE_DIR)
         if (!cacheDir.exists() || !cacheDir.isDirectory) return 0L
 
         return cacheDir.listFiles()?.sumOf { it.length() } ?: 0L

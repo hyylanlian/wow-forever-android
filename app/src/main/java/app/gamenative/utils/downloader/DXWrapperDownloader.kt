@@ -3,6 +3,7 @@ package app.gamenative.utils.downloader
 import android.content.Context
 import app.gamenative.BuildConfig
 import app.gamenative.utils.Net
+import app.gamenative.utils.SharedCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -67,7 +68,7 @@ object DXWrapperDownloader {
 
         // Modern variant: download from server
         // Check if already downloaded and cached
-        val destFile = File(context.filesDir, "$DXWRAPPER_CACHE_DIR/${component.name}")
+        val destFile = File(SharedCache.root(context), "$DXWRAPPER_CACHE_DIR/${component.name}")
         if (destFile.exists() && destFile.length() > 0) {
             Timber.d("Using cached dxwrapper: $componentId at ${destFile.absolutePath}")
             return@withContext destFile
@@ -120,7 +121,7 @@ object DXWrapperDownloader {
      * Clears the cached dxwrapper files to free up space.
      */
     fun clearCache(context: Context) {
-        val cacheDir = File(context.filesDir, DXWRAPPER_CACHE_DIR)
+        val cacheDir = File(SharedCache.root(context), DXWRAPPER_CACHE_DIR)
         if (cacheDir.exists() && cacheDir.isDirectory) {
             cacheDir.listFiles()?.forEach { it.delete() }
             Timber.i("Cleared dxwrapper cache")
@@ -131,7 +132,7 @@ object DXWrapperDownloader {
      * Gets the total size of cached dxwrapper files.
      */
     fun getCacheSize(context: Context): Long {
-        val cacheDir = File(context.filesDir, DXWRAPPER_CACHE_DIR)
+        val cacheDir = File(SharedCache.root(context), DXWRAPPER_CACHE_DIR)
         if (!cacheDir.exists() || !cacheDir.isDirectory) return 0L
 
         return cacheDir.listFiles()?.sumOf { it.length() } ?: 0L
