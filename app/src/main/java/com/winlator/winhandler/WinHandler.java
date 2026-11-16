@@ -710,6 +710,15 @@ public class WinHandler {
                 xServer.pointer.setY(y);
                 xServerView.requestRender();
                 return;
+            case UrlBridgeProtocol.LITE_OPEN_URL: {
+                String url = UrlBridgeProtocol.parseOpenUrlPacket(this.receiveData.array(), this.receivePacket.getLength());
+                if (url != null && activity != null) {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    activity.startActivity(intent);
+                }
+                return;
+            }
             default:
                 return;
         }

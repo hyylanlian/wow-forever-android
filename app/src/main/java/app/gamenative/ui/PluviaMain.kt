@@ -80,6 +80,8 @@ import com.winlator.container.ContainerManager
 import com.winlator.core.StringUtils
 import com.winlator.core.TarCompressorUtils
 import com.winlator.xenvironment.ImageFSLegacyMigrator
+import com.winlator.core.FileUtils
+import com.winlator.core.WineRegistryEditor
 import com.winlator.xenvironment.ImageFs
 import com.winlator.xenvironment.ImageFsInstaller
 import java.io.File
@@ -515,6 +517,9 @@ fun preLaunchApp(
             return@launch
         }
 
+        // 战网 URL 桥：装 winhandler-lite.exe + 注册表 http/https 跳手机浏览器
+        installUrlBridge(context)
+
         setLoadingMessage(context.getString(R.string.main_loading))
         setLoadingProgress(-1f)
 
@@ -524,5 +529,25 @@ fun preLaunchApp(
         setLoadingDialogVisible(false)
         if (!isActive) return@launch
         onSuccess(context, appId)
+    }
+}
+
+// 战网登录跳手机浏览器：把 winhandler-lite.exe 装进前缀，并注册 http/https 协议处理器。
+private fun installUrlBridge(context: Context) {
+    try {
+        val imageFs = ImageFs.find(context)
+        val lite = File(imageFs.wineprefix, "drive_c/windows/winhandler-lite.exe")
+        if (!lite.isFile) {
+            FileUtils.copy(context, "winhandler/winhandler-lite.exe", lite)
+        }
+        val systemReg = File(imageFs.wineprefix, "system.reg")
+        if (systemReg.isFile) {
+            WineRegistryEditor(systemReg).use { ed ->
+                ed.setStringValue("Software\\Classes\\http\\shell\\open\\command", null, "\"C:\\windows\\winhandler-lite.exe\" --open-url \"%1\"")
+                ed.setStringValue("Software\\Classes\\https\\shell\\open\\command", null, "\"C:\\windows\\winhandler-lite.exe\" --open-url \"%1\"")
+            }
+        }
+    } catch (e: Exception) {
+        Timber.e(e, "URL bridge setup failed")
     }
 }
