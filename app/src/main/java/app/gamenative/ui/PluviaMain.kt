@@ -517,14 +517,14 @@ fun preLaunchApp(
             return@launch
         }
 
-        // 战网 URL 桥：装 winhandler-lite.exe + 注册表 http/https 跳手机浏览器
-        installUrlBridge(context)
-
         setLoadingMessage(context.getString(R.string.main_loading))
         setLoadingProgress(-1f)
 
         // must activate container before downloading save files
         containerManager.activateContainer(container)
+
+        // 战网 URL 桥：装 winhandler-lite.exe + 注册表 http/https 跳手机浏览器（前缀就绪后）
+        installUrlBridge(context)
 
         setLoadingDialogVisible(false)
         if (!isActive) return@launch
