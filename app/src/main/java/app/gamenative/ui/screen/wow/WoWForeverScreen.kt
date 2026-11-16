@@ -1330,20 +1330,23 @@ private fun bnetContainerConfig(gameRoot: File, gpu: GpuProfile, screenSize: Str
         put("name", "Battle.net")
         put("executablePath", executablePath)
         // 国服登录：战网通行证登录自 2026-01 已关闭，必须 --setregion=CN 走网易账号区域。
-        // 安装器不带此参数，避免未知参数；国际服仍走 launchGame(login.txt) 不受影响。
-        put("execArgs", if (executablePath == BNET_LAUNCHER) "--setregion=CN" else "")
+        // 战网 UI 是 CEF/Chromium：--js-flags=--no-incremental-marking 是 WoWBox 验证过的 V8 renderer 崩溃规避，
+        // 不加这行，Adreno 8xx + FEX 下常见"窗口框架能画、网页内容全黑"。安装器不带这些参数，国际服走 launchGame 不受影响。
+        put("execArgs", if (executablePath == BNET_LAUNCHER) "--setregion=CN --js-flags=--no-incremental-marking" else "")
         put("showFPS", false)
         put("displayRendererMode", "vulkan") // 跟游戏一致用 Vulkan（游戏能正常渲染，战网也用 vulkan）
         put("dxwrapper", "dxvk-2.4.1-1") // 战网是 x86-64 CEF，用通用 x86-64 DXVK，不是游戏的 ARM64EC DXVK
         put("dxwrapperConfig", "version=2.4.1-1")
         put("fexcoreVersion", "2508-wowbox-mainline-7519b960-2beba31f") // 仅战网用 FrontMage FEX
-        // 战网是 x86-64 CEF UI，不能复用游戏的 TU_DEBUG=noconform/sysmem（8 Elite 会闪屏）；
-        // 换 CEF 友好的 nolrz + 关 BCN compute + xinput 桥接（参照 WoWBox box_spec.json env.base）。
+        // 战网是 x86-64 CEF UI，env 对齐 WoWBox box_spec.json env.base（同一设备上跑通国服的配置）：
+        // CEF 友好的 nolrz + 关 BCN compute + DXVK/VKD3D 缓存调优 + FEX/DXVK 日志；去掉 mailbox（WoWBox 不设，偶发黑帧）。
         val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
         put("envVars",
             "WINEESYNC=0 WINEFSYNC=0 WINEDLLOVERRIDES=xinput1_3=n,b;xinput1_4=n,b;windows.gaming.input=d " +
             "SDL_JOYSTICK_RAWINPUT=0 TU_DEBUG=nolrz DISABLE_BCN_COMPUTE=1 BCN_COMPUTE_AUTO=1 " +
-            "MESA_VK_WSI_PRESENT_MODE=mailbox ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv" + BNET_ENV)
+            "DXVK_CONFIG=d3d11.cachedDynamicResources=vic VKD3D_CONFIG=force_host_cached " +
+            "FEX_SILENTLOG=1 FEX_OUTPUTLOG=stderr DXVK_LOG_LEVEL=info " +
+            "${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv" + BNET_ENV)
     }
 }
 
