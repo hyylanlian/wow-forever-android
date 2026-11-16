@@ -1329,7 +1329,9 @@ private fun bnetContainerConfig(gameRoot: File, gpu: GpuProfile, screenSize: Str
         put("id", BNET_CONTAINER_ID)
         put("name", "Battle.net")
         put("executablePath", executablePath)
-        put("execArgs", "")
+        // 国服登录：战网通行证登录自 2026-01 已关闭，必须 --setregion=CN 走网易账号区域。
+        // 安装器不带此参数，避免未知参数；国际服仍走 launchGame(login.txt) 不受影响。
+        put("execArgs", if (executablePath == BNET_LAUNCHER) "--setregion=CN" else "")
         put("showFPS", false)
         put("displayRendererMode", "vulkan") // 跟游戏一致用 Vulkan（游戏能正常渲染，战网也用 vulkan）
         put("dxwrapper", "dxvk-2.4.1-1") // 战网是 x86-64 CEF，用通用 x86-64 DXVK，不是游戏的 ARM64EC DXVK
