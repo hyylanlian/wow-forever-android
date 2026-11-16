@@ -27,6 +27,14 @@ android {
     ndkVersion = "27.3.13750724"
 
     signingConfigs {
+        // 稳定 debug 签名：钉死到仓库里的 keystores/debug.keystore，本地/CI 用同一把钥，
+        // 否则本地构建用各自的 ~/.android/debug.keystore，和 CI 包签名不一致 → 无法覆盖安装。
+        create("debug") {
+            storeFile = rootProject.file("keystores/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("release") {
             if (keystoreProperties != null) {
                 storeFile = file(keystoreProperties["storeFile"].toString())
