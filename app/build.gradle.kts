@@ -29,7 +29,8 @@ android {
     signingConfigs {
         // 稳定 debug 签名：钉死到仓库里的 keystores/debug.keystore，本地/CI 用同一把钥，
         // 否则本地构建用各自的 ~/.android/debug.keystore，和 CI 包签名不一致 → 无法覆盖安装。
-        create("debug") {
+        // 注意：名字不能叫 "debug"（AGP 已内置同名 SigningConfig，create 会直接报错）。
+        create("stableDebug") {
             storeFile = rootProject.file("keystores/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -119,12 +120,12 @@ android {
             isDebuggable = true
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName(if (keystoreProperties != null) "release" else "debug")
+            signingConfig = signingConfigs.getByName(if (keystoreProperties != null) "release" else "stableDebug")
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName(if (keystoreProperties != null) "release" else "debug")
+            signingConfig = signingConfigs.getByName(if (keystoreProperties != null) "release" else "stableDebug")
         }
     }
 
