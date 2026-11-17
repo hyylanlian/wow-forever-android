@@ -11,7 +11,7 @@ DEST="$REPO_DIR/app/src/main/assets/bundled_components"
 RELEASE_URL="${COMPONENTS_URL:-https://github.com/jaredgei/wow-forever-android/releases/download/components-v1}"
 GH_PROXY="${GH_PROXY:-https://ghfast.top/}"
 FILES=(
-  proton-11.0-90624-arm64ec.wcp
+  proton-11.0-1-arm64ec.txz
   dxvk-2.4.1-wow-aarch64-test.wcp
   turnip-wow-scheduler-test.zip
   turnip-V32-RP6sched.zip
@@ -27,12 +27,22 @@ for f in "${FILES[@]}"; do
   else
     if [ "$f" = "turnip-V32-RP6sched.zip" ]; then
       url="${GH_PROXY}https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip"
+      curl -fL --retry 3 -o "$DEST/$f.part" "$url"
+      mv "$DEST/$f.part" "$DEST/$f"
+      echo "downloaded $f"
+    elif [ "$f" = "proton-11.0-1-arm64ec.txz" ]; then
+      # FrontMage (WoWBox) Wine runtime，从 WoWBox 的 runtime-assets tarball 里抽出。
+      curl -fL --retry 3 -o /tmp/wowbox-runtime.tar.gz "${GH_PROXY}https://github.com/FrontMage/WoWBox/releases/download/v0.3.0/WoWBox-v0.3.0-runtime-assets.tar.gz"
+      tar -xzf /tmp/wowbox-runtime.tar.gz -C /tmp "app/src/main/assets/wine-runtime-wowbox-rwoa-openfonts-6d87ba31.txz"
+      mv "/tmp/app/src/main/assets/wine-runtime-wowbox-rwoa-openfonts-6d87ba31.txz" "$DEST/$f"
+      rm -f /tmp/wowbox-runtime.tar.gz
+      echo "downloaded $f (extracted from WoWBox runtime)"
     else
       url="${GH_PROXY}${RELEASE_URL}/$f"
+      curl -fL --retry 3 -o "$DEST/$f.part" "$url"
+      mv "$DEST/$f.part" "$DEST/$f"
+      echo "downloaded $f"
     fi
-    curl -fL --retry 3 -o "$DEST/$f.part" "$url"
-    mv "$DEST/$f.part" "$DEST/$f"
-    echo "downloaded $f"
   fi
 done
 
