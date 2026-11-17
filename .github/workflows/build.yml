@@ -46,6 +46,18 @@ jobs:
           mkdir -p ~/.android
           cp keystores/debug.keystore ~/.android/debug.keystore
 
+      - name: Build DPAPI launch-options helper (ARM64 PE)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-aarch64
+          aarch64-w64-mingw32-gcc -Os \
+            tools/launch-options/wowf-launch-options.c \
+            tools/launch-options/kernel32.def \
+            tools/launch-options/crypt32.def \
+            tools/launch-options/advapi32.def \
+            -o app/src/main/assets/launch-options/wowf-launch-options-arm64.exe
+          file app/src/main/assets/launch-options/wowf-launch-options-arm64.exe
+
       - name: Build
         run: |
           chmod +x gradlew

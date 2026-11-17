@@ -1,0 +1,8 @@
+LIBRARY kernel32.dll
+EXPORTS
+ReadFile
+WriteFile
+GetStdHandle
+ExitProcess
+LocalFree
+GetLastError
