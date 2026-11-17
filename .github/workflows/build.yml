@@ -49,12 +49,14 @@ jobs:
       - name: Build DPAPI launch-options helper (ARM64 PE)
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-aarch64
-          aarch64-w64-mingw32-gcc -Os \
+          sudo apt-get install -y clang lld
+          mkdir -p app/src/main/assets/launch-options
+          clang --target=aarch64-pc-windows-msvc -nostdlib -ffreestanding -fuse-ld=lld \
+            -Wl,/entry:mainCRTStartup \
+            -Wl,/def:tools/launch-options/kernel32.def \
+            -Wl,/def:tools/launch-options/crypt32.def \
+            -Wl,/def:tools/launch-options/advapi32.def \
             tools/launch-options/wowf-launch-options.c \
-            tools/launch-options/kernel32.def \
-            tools/launch-options/crypt32.def \
-            tools/launch-options/advapi32.def \
             -o app/src/main/assets/launch-options/wowf-launch-options-arm64.exe
           file app/src/main/assets/launch-options/wowf-launch-options-arm64.exe
 

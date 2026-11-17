@@ -1346,7 +1346,7 @@ private fun prepareWebTokenLaunch(context: Context, gameRoot: File, gpu: GpuProf
     val locale = GameRegion.entries.firstOrNull { it.name == token.region }?.launchLocale() ?: "enUS"
     val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context)).apply {
         put("executablePath", "C:\\windows\\$HELPER_EXE")
-        put("execArgs", "write ${token.value} ${token.region} $locale")
+        put("execArgs", "")
         put("showFPS", false)
     }
     val containerManager = ContainerManager(context)
@@ -1366,6 +1366,10 @@ private fun prepareWebTokenLaunch(context: Context, gameRoot: File, gpu: GpuProf
     if (!helperHost.isFile) {
         FileUtils.copy(context, "launch-options/$HELPER_EXE", helperHost)
     }
+    // The helper reads its input frame from a file (the container launch path can't pipe stdin/argv).
+    val inputHost = File(created.getRootDir(), ".wine/drive_c/windows/temp/wowf-launch-options.txt")
+    inputHost.parentFile?.mkdirs()
+    inputHost.writeText("write\n${token.value}\n${token.region}\n$locale\n")
     return CONTAINER_ID
 }
 
