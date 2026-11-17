@@ -712,6 +712,15 @@ public class WinHandler {
                 return;
             case UrlBridgeProtocol.LITE_OPEN_URL: {
                 String url = UrlBridgeProtocol.parseOpenUrlPacket(this.receiveData.array(), this.receivePacket.getLength());
+                try {
+                    File logDir = app.gamenative.utils.SharedCache.dir(activity, "logs");
+                    //noinspection ResultOfMethodCallIgnored
+                    logDir.mkdirs();
+                    java.io.FileWriter fw = new java.io.FileWriter(new File(logDir, "urlbridge.log"), true);
+                    fw.write("received url=" + url + "\n");
+                    fw.close();
+                } catch (Throwable ignored) {
+                }
                 if (url != null && activity != null) {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
