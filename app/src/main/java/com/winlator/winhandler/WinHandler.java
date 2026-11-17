@@ -61,6 +61,8 @@ public class WinHandler {
     private MappedByteBuffer gamepadBuffer;
     private static final short SERVER_PORT = 7947;
     private static final short CLIENT_PORT = 7946;
+    // 收包缓冲：要容下 URL 桥的 OPEN_URL 包（6 + UTF8(URL)，最大约 1806 字节）。
+    private static final int RX_PACKET_MAX = 2048;
     private final ArrayDeque<Runnable> actions;
     private ExternalController currentController;
     private volatile int currentControllerId;
@@ -151,10 +153,12 @@ public class WinHandler {
         ByteOrder byteOrder = ByteOrder.LITTLE_ENDIAN;
         ByteBuffer order = allocate.order(byteOrder);
         this.sendData = order;
-        ByteBuffer order2 = ByteBuffer.allocate(64).order(byteOrder);
+        // 收包缓冲必须够大：URL 桥的 OPEN_URL 包是 6+UTF8(URL)（可到 ~1806 字节），
+        // 原来 64 字节会被截断，导致 parseOpenUrlPacket 长度校验失败（received url=null）。
+        ByteBuffer order2 = ByteBuffer.allocate(RX_PACKET_MAX).order(byteOrder);
         this.receiveData = order2;
         this.sendPacket = new DatagramPacket(order.array(), 64);
-        this.receivePacket = new DatagramPacket(order2.array(), 64);
+        this.receivePacket = new DatagramPacket(order2.array(), RX_PACKET_MAX);
         this.actions = new ArrayDeque<>();
         this.initReceived = false;
         this.running = false;
