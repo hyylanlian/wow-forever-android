@@ -1214,7 +1214,8 @@ private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
     companion object {
         fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
-            GpuProfile(ADRENO_8XX_DRIVER, "noconform,sysmem", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
+            // nolrz 对齐 WoWBox（同设备跑通）；去掉 noconform,sysmem —— sysmem 在 Adreno 8xx 上是闪屏常见源。
+            GpuProfile(ADRENO_8XX_DRIVER, "nolrz", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
         } else {
             GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740")
         }

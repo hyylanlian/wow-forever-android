@@ -436,6 +436,19 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             FileUtils.chmod(box64File, 0755);
         }
 
+        File logFile;
+        try {
+            File logDir = app.gamenative.utils.SharedCache.dir(environment.getContext(), "logs");
+            //noinspection ResultOfMethodCallIgnored
+            logDir.mkdirs();
+            logFile = new File(logDir, "last-run.log");
+            // 截断，只保留最近一次运行
+            new java.io.FileOutputStream(logFile, false).close();
+            Log.d("BionicProgramLauncherComponent", "wine log -> " + logFile.getAbsolutePath());
+        } catch (Throwable t) {
+            logFile = null;
+        }
+
         return ProcessHelper.exec(command, envVars.toStringArray(), workingDir != null ? workingDir : rootDir, (status) -> {
             synchronized (lock) {
                 pid = -1;
@@ -445,7 +458,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
                 if (terminationCallback != null)
                     terminationCallback.call(status);
             }
-        });
+        }, logFile);
     }
 
     @NonNull

@@ -301,6 +301,11 @@ public abstract class ProcessHelper {
     }
 
     public static int exec(String command, String[] envp, File workingDir, Callback<Integer> terminationCallback) {
+        return exec(command, envp, workingDir, terminationCallback, null);
+    }
+
+    /** 同 {@link #exec}，但当 logFile 非空时把进程 stdout/stderr 追加写入该文件（把 wine/FEX/DXVK 日志落盘便于排查）。 */
+    public static int exec(String command, String[] envp, File workingDir, Callback<Integer> terminationCallback, File logFile) {
         int pid = -1;
         java.lang.Process process = null;
         try {
@@ -317,13 +322,13 @@ public abstract class ProcessHelper {
             pid = pidField.getInt(process);
             pidField.setAccessible(false);
 
-            if (!debugCallbacks.isEmpty()) {
+            if (logFile != null) {
+                createFileThread(process.getInputStream(), logFile, "STDOUT");
+                createFileThread(process.getErrorStream(), logFile, "STDERR");
+            } else if (!debugCallbacks.isEmpty()) {
                 createDebugThread(process.getInputStream());
                 createDebugThread(process.getErrorStream());
             }
-//            Uncomment the following lines to see logs from wine
-//            createDebugThread(process.getInputStream(), "STDOUT", pid);
-//            createDebugThread(process.getErrorStream(), "STDERR", pid);
 
             if (terminationCallback != null) createWaitForThread(process, terminationCallback);
         }
@@ -333,6 +338,25 @@ public abstract class ProcessHelper {
             if (terminationCallback != null) terminationCallback.call(-1);
         }
         return pid;
+    }
+
+    private static void createFileThread(InputStream stream, File logFile, String tag) {
+        Thread t = new Thread(() -> {
+            try (java.io.BufferedWriter w = new java.io.BufferedWriter(
+                    new java.io.OutputStreamWriter(new java.io.FileOutputStream(logFile, true)), 1 << 16);
+                 BufferedReader r = new BufferedReader(new InputStreamReader(stream))) {
+                String l;
+                while ((l = r.readLine()) != null) {
+                    w.write(tag);
+                    w.write(": ");
+                    w.write(l);
+                    w.write("\n");
+                }
+            } catch (Exception ignored) {
+            }
+        }, "log-" + tag);
+        t.setDaemon(true);
+        t.start();
     }
 
     public static java.lang.Process startProcess(String command, String[] envp, File workingDir) {
