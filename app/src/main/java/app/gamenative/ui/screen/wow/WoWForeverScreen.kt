@@ -1506,8 +1506,13 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         configWtf.writeText(CONFIG_DEFAULTS.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n")
     }
 
-    val forced = mapOf("gxApi" to CONFIG_DEFAULTS.getValue("gxApi"), "portal" to "\"${region?.name ?: portalOf(root)}\"") +
-        RESOLUTION_KEYS.associateWith { "\"$screenSize\"" }
+    val forced = mapOf(
+        "gxApi" to CONFIG_DEFAULTS.getValue("gxApi"),
+        // agentUID must be re-written every launch: the game drops it when it saves Config.wtf,
+        // and without it the SSO login can't tell which product's realm list to fetch.
+        "agentUID" to CONFIG_DEFAULTS.getValue("agentUID"),
+        "portal" to "\"${region?.cdnRegion ?: portalOf(root)}\"",
+    ) + RESOLUTION_KEYS.associateWith { "\"$screenSize\"" }
     val forcedLines = forced.map { (key, value) -> "SET $key $value" }
     val original = configWtf.readLines()
     if (!original.containsAll(forcedLines)) {
