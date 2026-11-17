@@ -1245,7 +1245,7 @@ private fun Throwable.isPermissionDenied() =
 
 private const val DEFAULT_DRIVER = "Turnip-WoW-scheduler-test"
 private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
-private const val PROTON_VERSION = "proton-11.0-1-arm64ec"
+private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
 private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
@@ -1539,9 +1539,9 @@ private fun installBundledComponents(context: Context, onStatus: (String) -> Uni
     installDriver(context, ADRENO_8XX_DRIVER, "turnip-V32-RP6sched.zip", onStatus)
 
     val protonDir = File(ImageFs.getSharedProtonDir(context), PROTON_VERSION)
-    if (!File(protonDir, "bin/wine").exists()) {
+    if (!File(protonDir, "profile.json").exists() || !File(protonDir, "bin/wine").exists()) {
         onStatus("Extracting Proton 11 ARM64EC (takes ~10s)...")
-        check(TarCompressorUtils.extract(TarCompressorUtils.Type.XZ, context, "bundled_components/$PROTON_VERSION.txz", protonDir)) { "Failed to extract Proton or graphics components." }
+        check(extractBundledWcp(context, "$PROTON_VERSION.wcp", protonDir)) { "Failed to extract Proton or graphics components." }
         File(protonDir, "bin").listFiles()?.forEach {
             it.setExecutable(true, false)
             it.setReadable(true, false)
