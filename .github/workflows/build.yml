@@ -51,14 +51,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang lld
           mkdir -p app/src/main/assets/launch-options
-          clang --target=aarch64-pc-windows-msvc -nostdlib -ffreestanding -fuse-ld=lld \
-            -Wl,/entry:mainCRTStartup \
-            -Wl,/def:tools/launch-options/kernel32.def \
-            -Wl,/def:tools/launch-options/crypt32.def \
-            -Wl,/def:tools/launch-options/advapi32.def \
-            tools/launch-options/wowf-launch-options.c \
-            -o app/src/main/assets/launch-options/wowf-launch-options-arm64.exe
-          file app/src/main/assets/launch-options/wowf-launch-options-arm64.exe
+          clang -target aarch64-pc-windows-msvc -ffreestanding -fno-stack-protector -fno-builtin -O2 \
+            -c tools/launch-options/wowf-launch-options.c -o /tmp/wowf-launch-options.obj
+          for lib in kernel32 crypt32 advapi32; do
+            lld-link /lib "/def:tools/launch-options/$lib.def" /machine:arm64 "/out:/tmp/$lib.lib"
+          done
+          lld-link /Brepro /entry:mainCRTStartup /subsystem:windows /nodefaultlib /machine:arm64 \
+            /tmp/wowf-launch-options.obj /tmp/kernel32.lib /tmp/crypt32.lib /tmp/advapi32.lib \
+            "/out:app/src/main/assets/launch-options/wowf-launch-options-arm64.exe"
+          ls -la app/src/main/assets/launch-options/
 
       - name: Build
         run: |
