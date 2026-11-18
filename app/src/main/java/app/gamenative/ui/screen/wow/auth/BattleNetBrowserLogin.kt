@@ -94,9 +94,10 @@ internal object BattleNetBrowserLogin {
                 fail(attempt, "Browser login timed out. Please try again.")
             }
             attempt.job = scope.launch { run(attempt) }
-            // These arguments contain paths and public switches only. The token travels over the authenticated socket.
-            return "\"C:\\wow-session\\$ASSET\" \"C:\\wow-session\\${request.name}\" " +
-                "\"${container.executablePath}\" -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11"
+            // Arguments are plain paths/switch tokens; the helper launches via `wine`
+            // directly now, so no shell quoting is wanted (wine treats quotes literally).
+            return "C:\\wow-session\\$ASSET C:\\wow-session\\${request.name} " +
+                "${container.executablePath} -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11"
         } catch (error: Exception) {
             bridge.close()
             request.delete()
