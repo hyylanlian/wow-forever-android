@@ -34,6 +34,8 @@ internal data class WowMachineIdentity(
             "\"MachineGuid\"=\"$machineGuid\"",
             "\"InstallDate\"=dword:%08x".format(installDate),
             "\"ComputerName\"=\"$computerName\"",
+            "\"VendorIdentifier\"=\"Qualcomm\"",
+            "\"ProcessorNameString\"=\"Qualcomm Oryon\"",
         )
         if (!systemReg.readText().let { reg -> applied.all { it in reg } }) {
             WineRegistryEditor(systemReg).use { registry ->
@@ -43,6 +45,10 @@ internal data class WowMachineIdentity(
                 registry.setStringValue(COMPUTER_NAME_KEY, "ComputerName", computerName)
                 registry.setStringValue(TCPIP_KEY, "Hostname", computerName)
                 registry.setStringValue(TCPIP_KEY, "NV Hostname", computerName)
+                // The game's anti-tamper hashes the CPU identity; Wine leaves the ARM64 vendor/name blank, which the
+                // client reports as "vendor: ?" and then stalls on. Report the Snapdragon Oryon the device runs.
+                registry.setStringValue(CPU_KEY, "VendorIdentifier", "Qualcomm")
+                registry.setStringValue(CPU_KEY, "ProcessorNameString", "Qualcomm Oryon")
             }
         }
         // Wine's mount manager reads C:'s volume serial from this file.
@@ -63,6 +69,7 @@ internal data class WowMachineIdentity(
         )
         private const val COMPUTER_NAME_KEY = "System\\ControlSet001\\Control\\ComputerName\\ComputerName"
         private const val TCPIP_KEY = "System\\ControlSet001\\Services\\Tcpip\\Parameters"
+        private const val CPU_KEY = "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0"
         private const val NAME_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
         // 2021-01-01 to 2025-06-01: a plausible Windows 10/11 install date.
