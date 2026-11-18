@@ -15,7 +15,7 @@ mkdir -p "$(dirname -- "$output")"
 "$compiler" -std=c11 -Os -Wall -Wextra -ffile-prefix-map="$bridge_dir"=. \
     -Dprintf=bridge_device_printf -Dputs=bridge_device_puts \
     -c "$bridge_dir/device_id.c" -o "$build_dir/device_id.o"
-"$compiler" -municode -static -s -Wl,--no-insert-timestamp -Wl,--build-id=none \
+"$compiler" -municode -s -Wl,--no-insert-timestamp -Wl,--build-id=none \
     "$build_dir/bridge.o" "$build_dir/protocol.o" "$build_dir/device_id.o" \
-    -lws2_32 -lcrypt32 -ladvapi32 -liphlpapi -o "$output"
+    -lmsvcrt -lws2_32 -lcrypt32 -ladvapi32 -liphlpapi -o "$output"
 printf 'Built %s\n' "$output"
