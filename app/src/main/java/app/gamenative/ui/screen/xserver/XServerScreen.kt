@@ -3662,14 +3662,7 @@ private fun setupXEnvironment(
         } else {
             directCommand
         }
-        val gameExecutable = if (BattleNetBrowserLogin.enabled(context)) {
-            // The helper is a console program (no window); launching it through
-            // `wine explorer /desktop=shell` makes it depend on the display driver,
-            // which is failing on this device. Run it directly instead.
-            "wine " + launchCommand
-        } else {
-            "wine explorer /desktop=shell," + xServer.screenInfo + " " + launchCommand
-        }
+        val gameExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " + launchCommand
         guestProgramLauncherComponent.guestExecutable = gameExecutable
         guestProgramLauncherComponent.isWoW64Mode = wow64Mode
         // Set steam type for selecting appropriate box64rc
