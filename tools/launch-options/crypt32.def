@@ -1,4 +1,0 @@
-LIBRARY crypt32.dll
-EXPORTS
-CryptProtectData
-CryptUnprotectData
