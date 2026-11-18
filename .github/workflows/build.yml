@@ -59,6 +59,14 @@ jobs:
             app/src/main/assets/wow-session-bridge.exe
           sha256sum app/src/main/assets/wow-session-bridge.exe
 
+      - name: Build DNS shim (aarch64)
+        run: |
+          NDK="$ANDROID_HOME/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64"
+          "$NDK/bin/aarch64-linux-android26-clang" -shared -fPIC -O2 \
+            -o app/src/main/jniLibs/arm64-v8a/libgamenative_dns_v4mapped.so \
+            app/src/main/cpp/gamenative_dns_v4mapped.c -ldl
+          sha256sum app/src/main/jniLibs/arm64-v8a/libgamenative_dns_v4mapped.so
+
       - name: Build
         run: |
           chmod +x gradlew
