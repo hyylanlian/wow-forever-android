@@ -75,7 +75,11 @@ class BgsClient internal constructor(
                     val raw = packet.body.bytes(3) ?: protocolError()
                     if (raw.size > 8192) protocolError()
                     val url = raw.toString(Charsets.UTF_8)
-                    if (!isTrustedSignInUrl(url)) throw BgsException("Battle.net returned an unsupported sign-in address.")
+                    if (!isTrustedSignInUrl(url)) {
+                        val host = try { URI(url).host } catch (_: Exception) { null }
+                        throw BgsException("Battle.net returned an unsupported sign-in address" +
+                            (host?.let { " ($it)" } ?: "") + ".")
+                    }
                     state = State.CHALLENGE
                     return@safe url
                 }
