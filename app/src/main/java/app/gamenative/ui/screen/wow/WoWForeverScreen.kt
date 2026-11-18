@@ -1227,7 +1227,7 @@ private fun Throwable.isPermissionDenied() =
 
 private const val DEFAULT_DRIVER = "Turnip-WoW-scheduler-test"
 private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
-private const val PROTON_VERSION = "proton-11.0-2-arm64ec"
+private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
 private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
@@ -1375,7 +1375,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")
         put("wineVersion", "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
-        put("fexcoreVersion", "2508-wowbox-mainline-7519b960-2beba31f")
+        put("fexcoreVersion", "2609-0")
         put("drives", "D:/storage/emulated/0/DownloadE:/data/data/app.wowforever/storageG:${gameRoot.path}")
         put("executablePath", "G:\\$FLAVOR_DIR\\$EXE_NAME")
         put("execArgs", "-d3d11 -launcherlogin -uid $TARGET_PRODUCT")

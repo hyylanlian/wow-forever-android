@@ -11,7 +11,7 @@ DEST="$REPO_DIR/app/src/main/assets/bundled_components"
 RELEASE_URL="${COMPONENTS_URL:-https://github.com/jaredgei/wow-forever-android/releases/download/components-v1}"
 GH_PROXY="${GH_PROXY:-https://ghfast.top/}"
 FILES=(
-  proton-11.0-2-arm64ec.wcp
+  proton-11.0-90624-arm64ec.wcp
   dxvk-2.4.1-wow-aarch64-test.wcp
   turnip-wow-scheduler-test.zip
   turnip-V32-RP6sched.zip
@@ -27,8 +27,6 @@ for f in "${FILES[@]}"; do
   else
     if [ "$f" = "turnip-V32-RP6sched.zip" ]; then
       url="${GH_PROXY}https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip"
-    elif [ "$f" = "proton-11.0-2-arm64ec.wcp" ]; then
-      url="${GH_PROXY}https://github.com/GameNative/proton-wine/releases/download/proton-11.0-2-20261115/$f"
     else
       url="${GH_PROXY}${RELEASE_URL}/$f"
     fi
