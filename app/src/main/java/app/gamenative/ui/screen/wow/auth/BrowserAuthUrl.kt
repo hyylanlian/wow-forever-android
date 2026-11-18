@@ -11,7 +11,9 @@ internal object BrowserAuthUrl {
     private const val MAX_TICKET_LENGTH = 2_048
     private val navigationDomains = listOf("battle.net", "blizzard.com", "battlenet.com.cn", "blizzard.cn")
 
-    fun isInitialUrl(value: String): Boolean = httpsHost(value)?.let { belongsTo(it, "battle.net") } == true
+    fun isInitialUrl(value: String): Boolean = httpsHost(value)?.let { host ->
+        belongsTo(host, "battle.net") || belongsTo(host, "battlenet.com.cn")
+    } == true
 
     fun isNavigationUrl(value: String): Boolean = httpsHost(value)?.let { host ->
         navigationDomains.any { belongsTo(host, it) }
