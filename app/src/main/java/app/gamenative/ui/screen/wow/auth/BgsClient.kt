@@ -255,7 +255,8 @@ class BgsClient internal constructor(
             val parsed = URI(url)
             val host = parsed.host?.lowercase(Locale.ROOT)
             parsed.scheme == "https" && parsed.rawUserInfo == null && parsed.port in listOf(-1, 443) &&
-                host != null && (host == "battle.net" || host.endsWith(".battle.net")) &&
+                host != null && (host == "battle.net" || host.endsWith(".battle.net") ||
+                    host == "battlenet.com.cn" || host.endsWith(".battlenet.com.cn")) &&
                 parsed.rawFragment == null
         } catch (_: Exception) {
             false
