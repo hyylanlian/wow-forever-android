@@ -34,12 +34,18 @@ internal object BrowserAuthUrl {
             uri.port != 0 || uri.rawUserInfo != null || uri.rawFragment != null || uri.rawPath !in listOf("", "/")
         ) return null
         val query = uri.rawQuery ?: return null
-        // CN appends a tracking param after the ST value; take the single ST param.
+        // Battle.net adds other parameters after the ticket (?ST=...&flowTrackingId=...), so they are allowed and
+        // ignored. Exactly one parameter may be named ST, and it must be spelled that way: a second or an encoded
+        // ST (%53T) is ambiguous between decoders and is refused, as is the ';' separator.
         if (';' in query) return null
-        val matches = query.split('&').filter { it.startsWith("ST=") }
-        if (matches.size != 1) return null
+        val named = try {
+            query.split('&').filter { URLDecoder.decode(it.substringBefore('='), StandardCharsets.UTF_8.name()) == "ST" }
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        val parameter = named.singleOrNull()?.takeIf { it.startsWith("ST=") } ?: return null
         val decoded = try {
-            URLDecoder.decode(matches[0].substring(3), StandardCharsets.UTF_8.name())
+            URLDecoder.decode(parameter.substring(3), StandardCharsets.UTF_8.name())
         } catch (_: IllegalArgumentException) {
             return null
         }
