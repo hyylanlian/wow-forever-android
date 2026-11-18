@@ -283,5 +283,8 @@ done:
     if (winsock_started) WSACleanup();
     if (mutex_owned) ReleaseMutex(mutex);
     if (mutex) CloseHandle(mutex);
+    if (result) {
+        fprintf(stderr, "bridge: stage %d failed (GetLastError=%lu)\n", result, (unsigned long)GetLastError());
+    }
     return result;
 }
