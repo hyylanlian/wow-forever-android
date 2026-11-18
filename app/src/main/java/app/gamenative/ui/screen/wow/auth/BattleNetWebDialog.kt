@@ -92,7 +92,7 @@ internal fun BattleNetWebDialog(
                         return true
                     }
                     if (!BrowserAuthUrl.isNavigationUrl(address)) {
-                        fail(view, "Sign-in tried to open an unsupported address (${BrowserAuthUrl.hostOf(address) ?: "unknown"}). Cancel and try again.")
+                        fail(view, "Sign-in tried to open an unsupported address (${BrowserAuthUrl.shapeOf(address)}). Cancel and try again.")
                         return true
                     }
                     origin = BrowserAuthUrl.displayOrigin(address) ?: "Battle.net"

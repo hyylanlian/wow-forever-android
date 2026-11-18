@@ -11,8 +11,11 @@ internal object BrowserAuthUrl {
     private const val MAX_TICKET_LENGTH = 2_048
     private val navigationDomains = listOf("battle.net", "blizzard.com", "battlenet.com.cn", "blizzard.cn", "163.com", "126.com", "yeah.net", "netease.com", "neteasegames.com")
 
-    /** For error reporting only: the host, never the full URL (which may carry credentials). */
-    fun hostOf(value: String): String? = parse(value)?.host?.lowercase(Locale.ROOT)
+    /** For error reporting only: the scheme/host/port shape, never the full URL (which may carry credentials). */
+    fun shapeOf(value: String): String {
+        val u = parse(value) ?: return "unparseable"
+        return "${u.scheme}://${u.host}:${u.port}" + (if (u.rawFragment != null) "#fragment" else "")
+    }
 
     fun isInitialUrl(value: String): Boolean = httpsHost(value)?.let { host ->
         belongsTo(host, "battle.net") || belongsTo(host, "battlenet.com.cn")
