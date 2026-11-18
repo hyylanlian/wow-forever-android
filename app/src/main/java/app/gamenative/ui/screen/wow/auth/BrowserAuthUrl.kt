@@ -11,10 +11,12 @@ internal object BrowserAuthUrl {
     private const val MAX_TICKET_LENGTH = 2_048
     private val navigationDomains = listOf("battle.net", "blizzard.com", "battlenet.com.cn", "blizzard.cn", "163.com", "126.com", "yeah.net", "netease.com", "neteasegames.com")
 
-    /** For error reporting only: the scheme/host/port shape, never the full URL (which may carry credentials). */
+    /** For error reporting only: the full localhost-callback shape (path + query) so a malformed ST redirect is visible. */
     fun shapeOf(value: String): String {
         val u = parse(value) ?: return "unparseable"
-        return "${u.scheme}://${u.host}:${u.port}" + (if (u.rawFragment != null) "#fragment" else "")
+        return "${u.scheme}://${u.host}:${u.port}${u.rawPath}" +
+            (u.rawQuery?.let { "?$it" } ?: "") +
+            (if (u.rawFragment != null) "#fragment" else "")
     }
 
     fun isInitialUrl(value: String): Boolean = httpsHost(value)?.let { host ->
