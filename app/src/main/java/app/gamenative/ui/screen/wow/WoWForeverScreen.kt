@@ -1375,7 +1375,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")
         put("wineVersion", "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
-        put("fexcoreVersion", "2609-0")
+        put("fexcoreVersion", "2508-wowbox-mainline-7519b960-2beba31f")
         put("drives", "D:/storage/emulated/0/DownloadE:/data/data/app.wowforever/storageG:${gameRoot.path}")
         put("executablePath", "G:\\$FLAVOR_DIR\\$EXE_NAME")
         put("execArgs", "-d3d11 -launcherlogin -uid $TARGET_PRODUCT")
