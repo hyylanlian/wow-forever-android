@@ -275,7 +275,7 @@ private class TlsBgsTransport(private val host: String) : BgsTransport {
     @Volatile private var closed = false
 
     init {
-        require(Regex("[A-Za-z0-9.-]+\\.battle\\.net").matches(host)) { "Unsupported Battle.net endpoint." }
+        require(Regex("[A-Za-z0-9.-]+\\.(battle\\.net|battlenet\\.com\\.cn)").matches(host)) { "Unsupported Battle.net endpoint." }
     }
 
     override fun connect() {

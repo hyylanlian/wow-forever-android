@@ -85,7 +85,11 @@ internal object BattleNetBrowserLogin {
             check(request.setReadable(true, true) && request.setWritable(true, true)) {
                 "Cannot protect the browser login request"
             }
-            val attempt = Attempt(bridge, request, "${region.name}.actual.battle.net", build)
+            val host = if (region == GameRegion.CN)
+                "cn.actual.battlenet.com.cn"
+            else
+                "${region.name.lowercase()}.actual.battle.net"
+            val attempt = Attempt(bridge, request, host, build)
             active = attempt
             mutableUi.value = Ui.Waiting("Starting Battle.net browser login…")
             // One deadline covers Wine startup, queues and browser interaction, below the helper's 15 minutes.
