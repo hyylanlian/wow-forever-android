@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.gamenative.R
 import app.gamenative.ui.util.SnackbarManager
+import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
 import app.gamenative.ui.util.applyScreenEffectsConfig
 import app.gamenative.ui.util.loadScreenEffectsConfig
 import androidx.core.content.ContextCompat
@@ -3654,9 +3655,14 @@ private fun setupXEnvironment(
         val wow64Mode = container.isWoW64Mode
         guestProgramLauncherComponent.setContainer(container)
         guestProgramLauncherComponent.setWineInfo(xServerState.value.wineInfo)
-        val gameExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " +
-            getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
+        val directCommand = getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
             (if (container.execArgs.isNotEmpty()) " " + container.execArgs else "")
+        val launchCommand = if (BattleNetBrowserLogin.enabled(context)) {
+            BattleNetBrowserLogin.start(context, container)
+        } else {
+            directCommand
+        }
+        val gameExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " + launchCommand
         guestProgramLauncherComponent.guestExecutable = gameExecutable
         guestProgramLauncherComponent.isWoW64Mode = wow64Mode
         // Set steam type for selecting appropriate box64rc

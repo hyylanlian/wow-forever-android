@@ -46,20 +46,18 @@ jobs:
           mkdir -p ~/.android
           cp keystores/debug.keystore ~/.android/debug.keystore
 
-      - name: Build DPAPI launch-options helper (ARM64 PE)
+      - name: Build browser-login helper (ARM64 PE)
+        env:
+          LLVM_MINGW: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
+          LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang lld
-          mkdir -p app/src/main/assets/launch-options
-          clang -target aarch64-pc-windows-msvc -ffreestanding -fno-stack-protector -fno-builtin -O2 \
-            -c tools/launch-options/wowf-launch-options.c -o /tmp/wowf-launch-options.obj
-          for lib in kernel32 crypt32 advapi32; do
-            lld-link /lib "/def:tools/launch-options/$lib.def" /machine:arm64 "/out:/tmp/$lib.lib"
-          done
-          lld-link /Brepro /entry:mainCRTStartup /subsystem:windows /nodefaultlib /machine:arm64 \
-            /tmp/wowf-launch-options.obj /tmp/kernel32.lib /tmp/crypt32.lib /tmp/advapi32.lib \
-            "/out:app/src/main/assets/launch-options/wowf-launch-options-arm64.exe"
-          ls -la app/src/main/assets/launch-options/
+          curl -fsSL -o "$RUNNER_TEMP/llvm-mingw.tar.xz" \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/$LLVM_MINGW.tar.xz"
+          echo "$LLVM_MINGW_SHA256  $RUNNER_TEMP/llvm-mingw.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$RUNNER_TEMP"
+          sh tools/wow-session-bridge/build.sh "$RUNNER_TEMP/$LLVM_MINGW/bin/aarch64-w64-mingw32-clang" \
+            app/src/main/assets/wow-session-bridge.exe
+          sha256sum app/src/main/assets/wow-session-bridge.exe
 
       - name: Build
         run: |

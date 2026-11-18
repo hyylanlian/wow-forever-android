@@ -64,6 +64,8 @@ import app.gamenative.ui.enums.DialogType
 import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.model.MainViewModel
 import app.gamenative.ui.screen.PluviaScreen
+import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
+import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLoginHost
 import app.gamenative.ui.screen.wow.GamePath
 import app.gamenative.ui.screen.wow.WoWForeverScreen
 import app.gamenative.ui.screen.wow.WoWLauncherState
@@ -279,6 +281,7 @@ fun PluviaMain(
             DisposableEffect(Unit) {
                 val clearSplash: (AndroidEvent.ClearBootingSplash) -> Unit = { initialSplash = false }
                 val forceClose: (AndroidEvent.ForceCloseApp) -> Unit = {
+                    BattleNetBrowserLogin.cancel(preserveFailure = true)
                     initialSplash = false
                     preLaunchJob?.cancel()
                     preLaunchJob = null
@@ -297,6 +300,7 @@ fun PluviaMain(
                     visible = state.showBootingSplash || initialSplash,
                     text = if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
                     onAbort = {
+                        BattleNetBrowserLogin.cancel()
                         initialSplash = false
                         preLaunchJob?.cancel()
                         preLaunchJob = null
@@ -369,6 +373,7 @@ fun PluviaMain(
                             viewModel.onWindowMapped(context, window, state.launchedAppId)
                         },
                         onExit = { onComplete ->
+                            BattleNetBrowserLogin.guestExited()
                             viewModel.exitApp(context, state.launchedAppId, onComplete)
                         },
                         onGameLaunchError = { error ->
@@ -406,6 +411,7 @@ fun PluviaMain(
                 }
             }
 
+            BattleNetBrowserLoginHost()
         }
     }
 }

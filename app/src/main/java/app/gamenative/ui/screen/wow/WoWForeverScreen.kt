@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.gamenative.BuildConfig
 import app.gamenative.PluviaApp
 import app.gamenative.events.AndroidEvent
+import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
 import app.gamenative.ui.screen.wow.WowClientDownloader.BUILD_INFO
 import app.gamenative.ui.screen.wow.WowClientDownloader.EXE_NAME
 import app.gamenative.ui.screen.wow.WowClientDownloader.FLAVOR_DIR
@@ -109,6 +110,7 @@ fun WoWForeverScreen(
     var isLaunching by remember { mutableStateOf(false) }
     var launchJob by remember { mutableStateOf<Job?>(null) }
     var hasSavedToken by remember { mutableStateOf(BattleNetToken.load(context) != null) }
+    var browserLogin by remember { mutableStateOf(BattleNetBrowserLogin.enabled(context)) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
     var showLoginDialog by remember { mutableStateOf(false) }
@@ -783,16 +785,11 @@ fun WoWForeverScreen(
                             launchBattleNet(BNET_INSTALLER)
                         }
                         LinkButton(
-                            text = "Login",
+                            text = if (browserLogin) "Browser login: On" else "Browser login: Off",
                             icon = Icons.Default.Key,
                         ) {
-                            showLoginDialog = true
-                        }
-                        if (hasSavedToken) {
-                            LinkButton("Forget Login", Icons.Default.Delete) {
-                                BattleNetToken.forget(context)
-                                hasSavedToken = false
-                            }
+                            browserLogin = !browserLogin
+                            BattleNetBrowserLogin.setEnabled(context, browserLogin)
                         }
                     }
                 }
@@ -800,21 +797,6 @@ fun WoWForeverScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
-    }
-
-    if (showLoginDialog) {
-        BattleNetWebLoginDialog(
-            region = region,
-            onDismiss = { showLoginDialog = false },
-            onToken = { token ->
-                showLoginDialog = false
-                BattleNetToken.save(context, token)
-                hasSavedToken = true
-                // Write WEB_TOKEN into the prefix now (one-shot helper boot) so the next Play
-                // signs straight in via SSO.
-                launchWebToken()
-            },
-        )
     }
 
     if (showUpgradeDialog) {
@@ -1324,6 +1306,10 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
         container.saveData()
     }
     check(containerManager.hasContainer(CONTAINER_ID)) { "Container creation failed. Check system storage and logs." }
+    if (BattleNetBrowserLogin.enabled(context)) {
+        // Even an empty login.txt can select the password path instead of the launcher session.
+        File(gameRoot, "${FLAVOR_DIR}/login.txt").delete()
+    }
     return CONTAINER_ID
 }
 
