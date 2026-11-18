@@ -34,10 +34,12 @@ internal object BrowserAuthUrl {
             uri.port != 0 || uri.rawUserInfo != null || uri.rawFragment != null || uri.rawPath !in listOf("", "/")
         ) return null
         val query = uri.rawQuery ?: return null
-        // A single, exact parameter avoids duplicate-key and alternate-decoding ambiguity.
-        if (!query.startsWith("ST=") || '&' in query || ';' in query) return null
+        // CN appends a tracking param after the ST value; take the single ST param.
+        if (';' in query) return null
+        val matches = query.split('&').filter { it.startsWith("ST=") }
+        if (matches.size != 1) return null
         val decoded = try {
-            URLDecoder.decode(query.substring(3), StandardCharsets.UTF_8.name())
+            URLDecoder.decode(matches[0].substring(3), StandardCharsets.UTF_8.name())
         } catch (_: IllegalArgumentException) {
             return null
         }
