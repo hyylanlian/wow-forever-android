@@ -323,6 +323,31 @@ int getaddrinfo(const char *node, const char *service,
     return 0;
 }
 
+static void rewrite_ipv6_loopback(struct addrinfo *head)
+{
+    for (; head; head = head->ai_next)
+    {
+        struct sockaddr_in6 *address;
+
+        if (head->ai_family != AF_INET6 ||
+            head->ai_addrlen < (socklen_t)sizeof(*address))
+            continue;
+
+        address = (struct sockaddr_in6 *)head->ai_addr;
+        if (!IN6_IS_ADDR_LOOPBACK(&address->sin6_addr))
+            continue;
+
+        /* Wine never completes an IPv6 loopback connect on this device, but
+         * the IPv4 loopback path works. Rewrite ::1 to the v4-mapped
+         * 127.0.0.1 (::ffff:7f00:1) so the game's local IPC uses IPv4. */
+        memset(&address->sin6_addr, 0, sizeof(address->sin6_addr));
+        address->sin6_addr.s6_addr[10] = 0xff;
+        address->sin6_addr.s6_addr[11] = 0xff;
+        address->sin6_addr.s6_addr[12] = 0x7f;
+        address->sin6_addr.s6_addr[15] = 0x01;
+    }
+}
+
 static int lookup(const char *node, const char *service,
                   const struct addrinfo *hints, struct addrinfo **result)
 {
@@ -351,14 +376,23 @@ static int lookup(const char *node, const char *service,
 
     if (!hints || hints->ai_family != AF_INET6 ||
         !(hints->ai_flags & AI_V4MAPPED))
-        return network_getaddrinfo(node, service, hints, result);
+    {
+        ret = network_getaddrinfo(node, service, hints, result);
+        if (!ret)
+            rewrite_ipv6_loopback(*result);
+        return ret;
+    }
 
     fallback_hints = *hints;
     fallback_hints.ai_flags &= ~(AI_V4MAPPED | AI_ALL);
 
     /* Prefer a genuine IPv6 answer, as Windows does without AI_ALL. */
     ret = network_getaddrinfo(node, service, &fallback_hints, result);
-    if (!ret) return 0;
+    if (!ret)
+    {
+        rewrite_ipv6_loopback(*result);
+        return 0;
+    }
 
     fallback_hints.ai_family = AF_INET;
     ret = network_getaddrinfo(node, service, &fallback_hints, &ipv4);
