@@ -43,8 +43,17 @@ int bridge_device_puts(const char *value) {
 }
 
 /* The helper is a GUI-subsystem program, so its stderr is not captured. Write
- * diagnostic lines to the game's Logs directory (reachable by the player), and
- * to the helper's own directory as a fallback. */
+ * diagnostic lines to several places the player can reach: the game's own
+ * directory, the Download drive, and the helper's directory as a fallback. */
+static void write_log(const WCHAR *path, const char *line, int n) {
+    HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        WriteFile(file, line, (DWORD)n, &written, NULL);
+        CloseHandle(file);
+    }
+}
+
 static void log_bridge(const WCHAR *game, const char *message) {
     char line[320];
     int n = snprintf(line, sizeof(line), "%s\r\n", message);
@@ -55,23 +64,12 @@ static void log_bridge(const WCHAR *game, const char *message) {
         WCHAR *sep = wcsrchr(path, L'\\');
         if (sep && sep != path) {
             *sep = 0;
-            wcscat(path, L"\\Logs\\bridge.log");
-            HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (file != INVALID_HANDLE_VALUE) {
-                DWORD written = 0;
-                WriteFile(file, line, (DWORD)n, &written, NULL);
-                CloseHandle(file);
-            }
+            wcscat(path, L"\\bridge.log");
+            write_log(path, line, n);
         }
     }
-    HANDLE file = CreateFileW(L"C:\\wow-session\\bridge.log", FILE_APPEND_DATA,
-                              FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, NULL);
-    if (file != INVALID_HANDLE_VALUE) {
-        DWORD written = 0;
-        WriteFile(file, line, (DWORD)n, &written, NULL);
-        CloseHandle(file);
-    }
+    write_log(L"D:\\bridge.log", line, n);
+    write_log(L"C:\\wow-session\\bridge.log", line, n);
 }
 
 static int read_config(const WCHAR *path, unsigned short *port, BYTE nonce[BRIDGE_NONCE_SIZE]) {
