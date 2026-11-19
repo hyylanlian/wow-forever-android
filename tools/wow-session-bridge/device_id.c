@@ -207,8 +207,28 @@ int pipe_device(void) {
         value[22] = device_hash(mac, used);
     }
     free(adapters);
-    printf("{ ");
-    for (int i = 0; i < 23; i++) printf("%s\"%s\" : %u", i ? ", " : "", names[i], value[i]);
-    puts(" }");
+    bridge_device_reset();
+    bridge_device_append("{ ", 2);
+    for (int i = 0; i < 23; i++) {
+        char item[64];
+        char digits[12];
+        int d = 0;
+        unsigned v = value[i];
+        do {
+            digits[d++] = (char)('0' + (v % 10u));
+            v /= 10u;
+        } while (v);
+        int p = 0;
+        if (i) { item[p++] = ','; item[p++] = ' '; }
+        item[p++] = '"';
+        for (const char *s = names[i]; *s; s++) item[p++] = *s;
+        item[p++] = '"';
+        item[p++] = ' ';
+        item[p++] = ':';
+        item[p++] = ' ';
+        while (d) item[p++] = digits[--d];
+        bridge_device_append(item, (size_t)p);
+    }
+    bridge_device_append(" }\n", 3);
     return 0;
 }

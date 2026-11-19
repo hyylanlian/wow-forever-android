@@ -12,8 +12,7 @@ mkdir -p "$(dirname -- "$output")"
     -c "$bridge_dir/bridge.c" -o "$build_dir/bridge.o"
 "$compiler" -std=c11 -Os -Wall -Wextra -Werror -ffile-prefix-map="$bridge_dir"=. \
     -c "$bridge_dir/protocol.c" -o "$build_dir/protocol.o"
-"$compiler" -std=c11 -Os -Wall -Wextra -ffile-prefix-map="$bridge_dir"=. \
-    -Dprintf=bridge_device_printf -Dputs=bridge_device_puts \
+"$compiler" -std=c11 -Os -Wall -Wextra -Werror -ffile-prefix-map="$bridge_dir"=. \
     -c "$bridge_dir/device_id.c" -o "$build_dir/device_id.o"
 # -mwindows: a console program gets a console window in the Wine desktop that stays in front of the game.
 "$compiler" -municode -mwindows -static -s -Wl,--no-insert-timestamp -Wl,--build-id=none \

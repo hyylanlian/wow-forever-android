@@ -21,25 +21,24 @@ static char device_json[BRIDGE_DEVICE_LIMIT];
 static size_t device_used;
 static int device_overflow;
 
-/* Only device_id.c is compiled with printf/puts redirected to these bounded
- * sinks. Its fingerprint algorithm remains the upstream file byte-for-byte. */
-int bridge_device_printf(const char *format, ...) {
-    if (device_overflow) return -1;
-    va_list arguments;
-    va_start(arguments, format);
-    int count = vsnprintf(device_json + device_used, sizeof(device_json) - device_used,
-                          format, arguments);
-    va_end(arguments);
-    if (count < 0 || (size_t)count >= sizeof(device_json) - device_used) {
-        device_overflow = 1;
-        return -1;
-    }
-    device_used += (size_t)count;
-    return count;
+/* Only device_id.c writes here. Wine's msvcrt vsnprintf returned zero bytes for
+ * most format strings on ARM64, so the device JSON is assembled with explicit
+ * appends instead of printf-family redirection. */
+void bridge_device_reset(void) {
+    device_used = 0;
+    device_overflow = 0;
+    device_json[0] = 0;
 }
 
-int bridge_device_puts(const char *value) {
-    return bridge_device_printf("%s\n", value);
+void bridge_device_append(const char *text, size_t length) {
+    if (device_overflow) return;
+    if (length > sizeof(device_json) - 1 - device_used) {
+        device_overflow = 1;
+        return;
+    }
+    memcpy(device_json + device_used, text, length);
+    device_used += length;
+    device_json[device_used] = 0;
 }
 
 /* The helper is a GUI-subsystem program, so its stderr is not captured. Write
