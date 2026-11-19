@@ -98,10 +98,12 @@ internal object BattleNetBrowserLogin {
                 fail(attempt, "Browser login timed out. Please try again.")
             }
             attempt.job = scope.launch { run(attempt) }
-            // The helper runs under `wine explorer /desktop=shell`, which re-parses the
-            // command line, so quote the paths (no shell quoting for a direct `wine` run).
-            return "\"C:\\wow-session\\$ASSET\" \"C:\\wow-session\\${request.name}\" " +
-                "\"${container.executablePath}\" -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11"
+            // The helper runs under `wine explorer /desktop=shell`. The explorer passes the
+            // rest of the command line to CreateProcessW(NULL, cmdline), whose loader does NOT
+            // strip quotes from the first token (find_exe_file fails on a quoted path). The
+            // paths contain no spaces, so leave them unquoted.
+            return "C:\\wow-session\\$ASSET C:\\wow-session\\${request.name} " +
+                "${container.executablePath} -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11"
         } catch (error: Exception) {
             bridge.close()
             request.delete()
