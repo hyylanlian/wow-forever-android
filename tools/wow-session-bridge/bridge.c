@@ -55,6 +55,7 @@ static void write_log(const WCHAR *path, const char *line, int n) {
 }
 
 static void log_bridge(const WCHAR *game, const char *message) {
+    OutputDebugStringA(message);
     char line[320];
     int n = snprintf(line, sizeof(line), "%s\r\n", message);
     if (n <= 0) return;
