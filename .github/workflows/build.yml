@@ -48,8 +48,8 @@ jobs:
 
       - name: Build browser-login helper (ARM64 PE)
         env:
-          LLVM_MINGW: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
-          LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
+          LLVM_MINGW: llvm-mingw-20261104-msvcrt-ubuntu-22.04-x86_64
+          LLVM_MINGW_SHA256: 6e3342e2e0dfa56e9178f3c34b198f278bd5e603db4a759455d1439cc2230630
         run: |
           curl -fsSL -o "$RUNNER_TEMP/llvm-mingw.tar.xz" \
             "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/$LLVM_MINGW.tar.xz"
