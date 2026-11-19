@@ -42,12 +42,12 @@ int bridge_device_puts(const char *value) {
     return bridge_device_printf("%s\n", value);
 }
 
-/* The helper is a GUI-subsystem program, so its stderr is not captured. Write the
- * bootstrap failure stage to the game's Logs directory (reachable by the player),
- * and to the helper's own directory as a fallback. */
-static void log_stage(const WCHAR *game, int stage, DWORD error) {
-    char line[96];
-    int n = snprintf(line, sizeof(line), "stage %d GetLastError=%lu\r\n", stage, (unsigned long)error);
+/* The helper is a GUI-subsystem program, so its stderr is not captured. Write
+ * diagnostic lines to the game's Logs directory (reachable by the player), and
+ * to the helper's own directory as a fallback. */
+static void log_bridge(const WCHAR *game, const char *message) {
+    char line[320];
+    int n = snprintf(line, sizeof(line), "%s\r\n", message);
     if (n <= 0) return;
     if (game && wcslen(game) < 32768) {
         WCHAR path[32768];
@@ -191,6 +191,11 @@ int wmain(int argc, WCHAR **argv) {
     PROCESS_INFORMATION child = {0};
     int result = 2, winsock_started = 0, mutex_owned = 0, authenticated = 0, owns_token = 0;
     WCHAR directory[32768], command[BRIDGE_COMMAND_LIMIT] = {0};
+    {
+        char started[96];
+        int n = snprintf(started, sizeof(started), "started argc=%d", argc);
+        if (n > 0) log_bridge(argc > 2 ? argv[2] : NULL, started);
+    }
     if (argc < 3 || !read_config(argv[1], &port, nonce)) goto done;
 
     /* The registry handoff is shared by all games in this Wine user/prefix.
@@ -316,7 +321,9 @@ done:
     if (mutex_owned) ReleaseMutex(mutex);
     if (mutex) CloseHandle(mutex);
     if (result) {
-        log_stage(argc > 2 ? argv[2] : NULL, result, GetLastError());
+        char failed[96];
+        int n = snprintf(failed, sizeof(failed), "stage %d failed GetLastError=%lu", result, (unsigned long)GetLastError());
+        if (n > 0) log_bridge(argc > 2 ? argv[2] : NULL, failed);
         fprintf(stderr, "bridge: stage %d failed (GetLastError=%lu)\n", result, (unsigned long)GetLastError());
     }
     return result;
