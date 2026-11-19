@@ -148,9 +148,11 @@ internal object BattleNetBrowserLogin {
             // User cancellation does not turn into a password-login attempt.
         } catch (error: BgsException) {
             fail(attempt, error.message ?: "Battle.net sign-in failed.")
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             // Never expose provider payloads, redirect URLs, credentials or arbitrary peer output.
-            fail(attempt, "Browser sign-in could not start the game. You can retry or switch back to password login in the launcher.")
+            // The exception class is safe and makes the failing step identifiable.
+            fail(attempt, "Browser sign-in could not start the game (${error.javaClass.simpleName}). " +
+                "You can retry or switch back to password login in the launcher.")
         } finally {
             attempt.close()
             synchronized(this) { if (active === attempt) active = null }
