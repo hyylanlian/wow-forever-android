@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -150,8 +151,9 @@ internal object BattleNetBrowserLogin {
             fail(attempt, error.message ?: "Battle.net sign-in failed.")
         } catch (error: Exception) {
             // Never expose provider payloads, redirect URLs, credentials or arbitrary peer output.
-            // The exception class is safe and makes the failing step identifiable.
-            fail(attempt, "Browser sign-in could not start the game (${error.javaClass.simpleName}). " +
+            // A JSON parse detail or exception class is safe and makes the failing step identifiable.
+            val detail = if (error is JSONException) " ${error.message}" else " (${error.javaClass.simpleName})"
+            fail(attempt, "Browser sign-in could not start the game$detail. " +
                 "You can retry or switch back to password login in the launcher.")
         } finally {
             attempt.close()
