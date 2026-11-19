@@ -42,6 +42,38 @@ int bridge_device_puts(const char *value) {
     return bridge_device_printf("%s\n", value);
 }
 
+/* The helper is a GUI-subsystem program, so its stderr is not captured. Write the
+ * bootstrap failure stage to the game's Logs directory (reachable by the player),
+ * and to the helper's own directory as a fallback. */
+static void log_stage(const WCHAR *game, int stage, DWORD error) {
+    char line[96];
+    int n = snprintf(line, sizeof(line), "stage %d GetLastError=%lu\r\n", stage, (unsigned long)error);
+    if (n <= 0) return;
+    if (game && wcslen(game) < 32768) {
+        WCHAR path[32768];
+        wcscpy(path, game);
+        WCHAR *sep = wcsrchr(path, L'\\');
+        if (sep && sep != path) {
+            *sep = 0;
+            wcscat(path, L"\\Logs\\bridge.log");
+            HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (file != INVALID_HANDLE_VALUE) {
+                DWORD written = 0;
+                WriteFile(file, line, (DWORD)n, &written, NULL);
+                CloseHandle(file);
+            }
+        }
+    }
+    HANDLE file = CreateFileW(L"C:\\wow-session\\bridge.log", FILE_APPEND_DATA,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        WriteFile(file, line, (DWORD)n, &written, NULL);
+        CloseHandle(file);
+    }
+}
+
 static int read_config(const WCHAR *path, unsigned short *port, BYTE nonce[BRIDGE_NONCE_SIZE]) {
     BYTE bytes[128];
     DWORD count = 0;
@@ -284,6 +316,7 @@ done:
     if (mutex_owned) ReleaseMutex(mutex);
     if (mutex) CloseHandle(mutex);
     if (result) {
+        log_stage(argc > 2 ? argv[2] : NULL, result, GetLastError());
         fprintf(stderr, "bridge: stage %d failed (GetLastError=%lu)\n", result, (unsigned long)GetLastError());
     }
     return result;
