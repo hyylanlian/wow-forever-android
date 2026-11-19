@@ -89,8 +89,6 @@ object WoWLauncherState {
 
 private const val CONTAINER_ID = "wow_forever"
 private const val BNET_CONTAINER_ID = "battle_net"
-// Native ARM64 PE (name must contain "ARM64" so XServerScreen dispatches it natively, not via FEX).
-private const val HELPER_EXE = "wowf-launch-options-arm64.exe"
 private const val BNET_LAUNCHER = "C:\\Program Files (x86)\\Battle.net\\Battle.net Launcher.exe"
 private const val BNET_INSTALLER = "D:\\Battle.net-Setup.exe"
 private const val BNET_ENV = " FEX_BNET_FORCE_X86=1 FEX_BNET_DETECT_LOG=0 FEX_BNET_ID_NTQUERYSYSTEMINFORMATION=0x9A FEX_BNET_ID_NTQUERYINFORMATIONPROCESS=0x89 FEX_BNET_ID_NTQUERYINFORMATIONTHREAD=0x8A"
@@ -109,11 +107,9 @@ fun WoWForeverScreen(
     var files by remember { mutableStateOf(GamePath.Status()) }
     var isLaunching by remember { mutableStateOf(false) }
     var launchJob by remember { mutableStateOf<Job?>(null) }
-    var hasSavedToken by remember { mutableStateOf(BattleNetToken.load(context) != null) }
     var browserLogin by remember { mutableStateOf(BattleNetBrowserLogin.enabled(context)) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
-    var showLoginDialog by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showStoragePermissionDialog by remember { mutableStateOf(false) }
@@ -282,40 +278,6 @@ fun WoWForeverScreen(
         }
     }
 
-    fun launchWebToken() {
-        val token = BattleNetToken.load(context) ?: return
-        if (isLaunching || files.isWrongGame) return
-        if (!files.hasStorageAccess) {
-            showStoragePermissionDialog = true
-            return
-        }
-        isLaunching = true
-        errorMessage = null
-        statusText = "Signing in to Battle.net..."
-
-        launchJob = scope.launch {
-            try {
-                val screenSize = fitScreenSizeToWindow(context, resolution.size)
-                val containerId = withContext(Dispatchers.IO) {
-                    prepareWebTokenLaunch(context, File(gamePath), gpu, screenSize, token)
-                }
-                statusText = "Writing Battle.net sign-in..."
-                onLaunch(containerId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: StorageAccessDeniedException) {
-                isLaunching = false
-                statusText = READY_STATUS
-                denyStorageAccess()
-            } catch (e: Exception) {
-                Timber.e(e, "Error writing Battle.net token")
-                errorMessage = e.message ?: "Sign-in failed"
-                statusText = "Sign-in failed"
-                isLaunching = false
-            }
-        }
-    }
-
     LifecycleResumeEffect(gamePath) {
         // Storage access may have just been granted, which can reveal an install that was invisible before.
         if (!isUpdating && !isLaunching) gamePath = GamePath.load(context)
@@ -434,7 +396,7 @@ fun WoWForeverScreen(
             versionStatus = null
             if (checkFiles()) {
                 checkVersionStatus()
-                if (hasSavedToken) launchGame()
+                if (browserLogin) launchGame()
             }
         }
     }
@@ -454,9 +416,9 @@ fun WoWForeverScreen(
         if (!files.hasStorageAccess) {
             showStoragePermissionDialog = true
         }
-        Timber.i("WoWForeverScreen LaunchedEffect: gamePath=$gamePath, ready=$ready, hasSavedToken=$hasSavedToken, shouldAutoLaunch=${WoWLauncherState.shouldAutoLaunch}")
+        Timber.i("WoWForeverScreen LaunchedEffect: gamePath=$gamePath, ready=$ready, browserLogin=$browserLogin, shouldAutoLaunch=${WoWLauncherState.shouldAutoLaunch}")
         when {
-            !ready || !hasSavedToken -> {
+            !ready || !browserLogin -> {
                 WoWLauncherState.shouldAutoLaunch = false
                 PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)
                 if (files.isLegacyBeta) showUpgradeDialog = true
@@ -544,8 +506,8 @@ fun WoWForeverScreen(
                         )
                         CheckItem(label = "All Files Access Permission", ready = files.hasStorageAccess)
                         CheckItem(
-                            label = if (hasSavedToken) "Battle.net Login (Configured)" else "Battle.net Login (Configure below play button)",
-                            ready = hasSavedToken,
+                            label = if (browserLogin) "Battle.net Login (browser sign-in enabled)" else "Battle.net Login (enable browser sign-in below)",
+                            ready = browserLogin,
                         )
                         appUpdate?.let {
                             CheckItem(
@@ -1310,52 +1272,6 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
         // Even an empty login.txt can select the password path instead of the launcher session.
         File(gameRoot, "${FLAVOR_DIR}/login.txt").delete()
     }
-    return CONTAINER_ID
-}
-
-/** The locale Battle.net's launch options carry for each region. */
-private fun GameRegion.launchLocale(): String = when (this) {
-    GameRegion.CN -> "zhCN"
-    GameRegion.US -> "enUS"
-    GameRegion.EU -> "enGB"
-    GameRegion.KR -> "koKR"
-    GameRegion.TW -> "zhTW"
-}
-
-/**
- * Points the game container at the DPAPI helper so a one-shot boot writes Battle.net's launch
- * options (WEB_TOKEN + REGION + LOCALE) into the prefix's registry. Runs through the normal
- * container launch path so the helper gets Wine's full environment (SysV shm, LD_PRELOAD shims,
- * REDIRECT_EXEC, certs) for free — a standalone `wine` invocation would miss all of that.
- */
-private fun prepareWebTokenLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, token: BattleNetToken.Token): String {
-    val locale = GameRegion.entries.firstOrNull { it.name == token.region }?.launchLocale() ?: "enUS"
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context)).apply {
-        put("executablePath", "C:\\windows\\$HELPER_EXE")
-        put("execArgs", "")
-        put("showFPS", false)
-    }
-    val containerManager = ContainerManager(context)
-    val container = containerManager.getContainerById(CONTAINER_ID)
-    if (container == null) {
-        containerManager.createContainer(CONTAINER_ID, config)
-    } else {
-        container.loadData(config)
-        container.saveData()
-    }
-    check(containerManager.hasContainer(CONTAINER_ID)) { "Container creation failed. Check system storage and logs." }
-    // Copy the helper into the prefix so wine can run C:\windows\<HELPER_EXE>.
-    val created = containerManager.getContainerById(CONTAINER_ID)
-        ?: throw IllegalStateException("Container creation failed")
-    val helperHost = File(created.getRootDir(), ".wine/drive_c/windows/$HELPER_EXE")
-    helperHost.parentFile?.mkdirs()
-    if (!helperHost.isFile) {
-        FileUtils.copy(context, "launch-options/$HELPER_EXE", helperHost)
-    }
-    // The helper reads its input frame from a file (the container launch path can't pipe stdin/argv).
-    val inputHost = File(created.getRootDir(), ".wine/drive_c/windows/temp/wowf-launch-options.txt")
-    inputHost.parentFile?.mkdirs()
-    inputHost.writeText("write\n${token.value}\n${token.region}\n$locale\n")
     return CONTAINER_ID
 }
 

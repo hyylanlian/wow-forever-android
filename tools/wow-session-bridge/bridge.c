@@ -41,9 +41,9 @@ void bridge_device_append(const char *text, size_t length) {
     device_json[device_used] = 0;
 }
 
-/* The helper is a GUI-subsystem program, so its stderr is not captured. Write
- * diagnostic lines to several places the player can reach: the game's own
- * directory, the Download drive, and the helper's directory as a fallback. */
+/* The helper is a GUI-subsystem program, so its stderr is not captured. Keep a
+ * short stage trail in the prefix's private directory; the failure dialog reads
+ * it so a locked-down launch never fails silently. */
 static void write_log(const WCHAR *path, const char *line, int n) {
     HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file != INVALID_HANDLE_VALUE) {
@@ -54,22 +54,10 @@ static void write_log(const WCHAR *path, const char *line, int n) {
     }
 }
 
-static void log_bridge(const WCHAR *game, const char *message) {
-    OutputDebugStringA(message);
+static void log_bridge(const char *message) {
     char line[320];
     int n = snprintf(line, sizeof(line), "%s\r\n", message);
     if (n <= 0) return;
-    if (game && wcslen(game) < 32768) {
-        WCHAR path[32768];
-        wcscpy(path, game);
-        WCHAR *sep = wcsrchr(path, L'\\');
-        if (sep && sep != path) {
-            *sep = 0;
-            wcscat(path, L"\\bridge.log");
-            write_log(path, line, n);
-        }
-    }
-    write_log(L"D:\\bridge.log", line, n);
     write_log(L"C:\\wow-session\\bridge.log", line, n);
 }
 
@@ -193,7 +181,7 @@ int wmain(int argc, WCHAR **argv) {
     {
         char started[96];
         int n = snprintf(started, sizeof(started), "started argc=%d", argc);
-        if (n > 0) log_bridge(argc > 2 ? argv[2] : NULL, started);
+        if (n > 0) log_bridge(started);
     }
     if (argc < 3 || !read_config(argv[1], &port, nonce)) goto done;
 
@@ -234,15 +222,8 @@ int wmain(int argc, WCHAR **argv) {
     SecureZeroMemory(received_proof, sizeof(received_proof));
 
     result = 7;
-    if (pipe_device() || device_overflow || !device_used) goto done;
-    {
-        char dump[320];
-        const char *tail = device_used > 100 ? device_json + device_used - 100 : device_json;
-        snprintf(dump, sizeof(dump), "device len=%u strlen=%u head=%.100s | tail=%.100s",
-                 (unsigned)device_used, (unsigned)strlen(device_json), device_json, tail);
-        log_bridge(argv[2], dump);
-    }
-    if (!send_frame(peer, device_json, (uint32_t)device_used)) goto done;
+    if (pipe_device() || device_overflow || !device_used ||
+        !send_frame(peer, device_json, (uint32_t)device_used)) goto done;
     SecureZeroMemory(device_json, sizeof(device_json));
     result = 8;
     if (!receive_token(peer, token, &token_size)) goto done;
@@ -329,7 +310,7 @@ done:
     if (result) {
         char failed[96];
         int n = snprintf(failed, sizeof(failed), "stage %d failed GetLastError=%lu", result, (unsigned long)GetLastError());
-        if (n > 0) log_bridge(argc > 2 ? argv[2] : NULL, failed);
+        if (n > 0) log_bridge(failed);
         fprintf(stderr, "bridge: stage %d failed (GetLastError=%lu)\n", result, (unsigned long)GetLastError());
     }
     return result;
