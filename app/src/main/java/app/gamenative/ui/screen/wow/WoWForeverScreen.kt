@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -104,6 +105,7 @@ fun WoWForeverScreen(
     var isLaunching by remember { mutableStateOf(false) }
     var launchJob by remember { mutableStateOf<Job?>(null) }
     var browserLogin by remember { mutableStateOf(BattleNetBrowserLogin.enabled(context)) }
+    var perfMode by remember { mutableStateOf(PerfMode.load(context)) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
@@ -700,6 +702,13 @@ fun WoWForeverScreen(
                             browserLogin = !browserLogin
                             BattleNetBrowserLogin.setEnabled(context, browserLogin)
                         }
+                        LinkButton(
+                            text = if (perfMode == PerfMode.MAX) "Performance: Max (cooler)" else "Performance: Standard",
+                            icon = Icons.Default.Speed,
+                        ) {
+                            perfMode = if (perfMode == PerfMode.MAX) PerfMode.STANDARD else PerfMode.MAX
+                            PerfMode.save(context, perfMode)
+                        }
                     }
                 }
             }
@@ -1205,7 +1214,7 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 
     onStatus("Configuring ${gpu.label} container...")
     val containerManager = ContainerManager(context)
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context))
+    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), PerfMode.load(context))
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
@@ -1222,9 +1231,30 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
     return CONTAINER_ID
 }
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
+/** Two container profiles: Standard for passive cooling, Max for playing on a cooler. */
+private enum class PerfMode(val pref: String) {
+    STANDARD("standard"),
+    MAX("max");
+
+    companion object {
+        private const val PREFS = "wow_perf_mode"
+        fun load(context: Context): PerfMode = if (context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("mode", STANDARD.pref) == MAX.pref) MAX else STANDARD
+        fun save(context: Context, mode: PerfMode) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("mode", mode.pref).apply()
+        }
+    }
+}
+
+private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity, perfMode: PerfMode): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    val envVars = "PROTON_NO_NTSYNC=1 WINEDEBUG=+winsock WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+    // Max (cooler): esync replaces wineserver round-trips, and DXVK caches dynamic resources.
+    // Standard keeps the validated defaults. PROTON_NO_NTSYNC stays in both: the ntsync driver hung sockets here.
+    val syncEnv = if (perfMode == PerfMode.MAX)
+        "WINEESYNC=1 DXVK_CONFIG=dxvk.cachedDynamicResources=c,dxvk.maxFrameLatency=1"
+    else
+        "WINEESYNC=0"
+    val envVars = "PROTON_NO_NTSYNC=1 WINEDEBUG=+winsock WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true $syncEnv MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")

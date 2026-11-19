@@ -96,6 +96,7 @@ Once your game files and Battle.net credentials are configured, the app automati
   - Accounts with an authenticator still enter the code on the sign-in page. The game keeps running when you switch apps, so you can copy a code from an authenticator app on the same device.
   - Each install shows Battle.net its own Windows PC identity (machine ID and a `DESKTOP-XXXXXXX` computer name), generated once and kept across updates. Reinstalling the app creates a new one, so Battle.net may treat it as a new device.
 - **Frame rate:** tuning notes, and the order to try them in, live in [`PERFORMANCE.md`](PERFORMANCE.md).
+- **Performance toggle:** the setup screen switches between **Standard** (passive cooling) and **Max (cooler)** container profiles; Max enables esync and DXVK dynamic-resource caching. Resolution stays independent, so with a cooler you can also raise it.
 
 ---
 
