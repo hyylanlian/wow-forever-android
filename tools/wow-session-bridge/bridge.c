@@ -235,8 +235,15 @@ int wmain(int argc, WCHAR **argv) {
     SecureZeroMemory(received_proof, sizeof(received_proof));
 
     result = 7;
-    if (pipe_device() || device_overflow || !device_used ||
-        !send_frame(peer, device_json, (uint32_t)device_used)) goto done;
+    if (pipe_device() || device_overflow || !device_used) goto done;
+    {
+        char dump[320];
+        const char *tail = device_used > 100 ? device_json + device_used - 100 : device_json;
+        snprintf(dump, sizeof(dump), "device len=%u strlen=%u head=%.100s | tail=%.100s",
+                 (unsigned)device_used, (unsigned)strlen(device_json), device_json, tail);
+        log_bridge(argv[2], dump);
+    }
+    if (!send_frame(peer, device_json, (uint32_t)device_used)) goto done;
     SecureZeroMemory(device_json, sizeof(device_json));
     result = 8;
     if (!receive_token(peer, token, &token_size)) goto done;
