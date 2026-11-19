@@ -92,8 +92,8 @@ Once your game files and Battle.net credentials are configured, the app automati
 - **Controller:** built-in handheld controllers work in-game. WoW's own gamepad mode handles the mapping.
 - **In-game menu:** press Back (the button or the back swipe gesture) to open the sidebar. It has **Keyboard**, on-screen controls, performance overlay and **Exit**.
 - **Keyboard:** the sidebar's **Keyboard** opens the Android keyboard. On dual-screen devices like the Thor it appears on the bottom screen. Symbols like `@` work, and so does pasting.
-- **Battle.net Auto-Login:** configure credentials directly on the launcher setup screen (**Login**). Credentials are saved encrypted on-device via Android Keystore. On boot, the launcher generates `_forever_/login.txt`, which the WoW client automatically reads on startup to sign in natively without macro simulation or synthetic clicks. Use **Forget Login** on the launcher setup screen to clear credentials and remove the login file.
-  - Authenticator codes still have to be entered by hand. The game keeps running when you switch apps, so you can grab a code from an authenticator app on the same device.
+- **Battle.net sign-in:** enable **Browser login** on the setup screen, then tap Play. The app runs a small ARM64 helper inside the prefix, opens Battle.net's official web sign-in (the NetEase account page on CN), and hands that session to the client through Battle.net's own browser-auth service protocol. Nothing is typed into the game and no password is stored on the device: the launch-only credential is written DPAPI-protected into the prefix registry and consumed by that launch. Any stale `_forever_/login.txt` is deleted first, because an empty one would force the password path. See [`BATTLE_NET_BROWSER_LOGIN.md`](BATTLE_NET_BROWSER_LOGIN.md).
+  - Accounts with an authenticator still enter the code on the sign-in page. The game keeps running when you switch apps, so you can copy a code from an authenticator app on the same device.
   - Each install shows Battle.net its own Windows PC identity (machine ID and a `DESKTOP-XXXXXXX` computer name), generated once and kept across updates. Reinstalling the app creates a new one, so Battle.net may treat it as a new device.
 
 ---
@@ -121,6 +121,7 @@ Whenever Blizzard patches the game:
 | *No realms available* / no servers listed | The device client is out of date. Tap **Update** on the launcher setup screen, or restart the app with Wi-Fi enabled. |
 | Keyboard doesn't appear | Force-stop Gboard (Settings → Apps → Gboard → Force stop) and open **Keyboard** again. It can get stuck on the second screen. |
 | Returns to the launcher after "Launching Game…" | Check the files under `_forever_/Errors/` on the device. |
+| Browser login fails with a helper stage (e.g. `stage 8 failed`) | The dialog includes the helper's own stage log. See the troubleshooting table in [`BATTLE_NET_BROWSER_LOGIN.md`](BATTLE_NET_BROWSER_LOGIN.md). |
 | Handheld frontend (e.g. Cocoon) shows the wrong icon | The frontend cached an old icon. Set it with the frontend's "Edit App Artwork", or reinstall the app. |
 
 ---
@@ -138,6 +139,13 @@ tools/fetch_components.sh           # Wine/Proton, DXVK and Turnip archives (~13
 Release builds are signed with `app/keystores/keystore.properties` when it exists (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). Otherwise they fall back to the debug key. Builds signed with different keys can't update each other, so switching between them means uninstalling first.
 
 `fetch_components.sh` downloads the three runtime archives from this repo's `components-v1` release and checks them against `tools/components.sha256`. If you already have them, pass a folder instead: `tools/fetch_components.sh /path/to/components`.
+
+The browser-login helper (`app/src/main/assets/wow-session-bridge.exe`) is not committed; CI builds it. Use the **msvcrt** llvm-mingw variant, not the UCRT one — the ARM64EC Wine prefix ships `msvcrt.dll` but no `api-ms-win-crt-*.dll`, so a UCRT build fails to load:
+
+```bash
+sh tools/wow-session-bridge/build.sh <llvm-mingw>/bin/aarch64-w64-mingw32-clang \
+    app/src/main/assets/wow-session-bridge.exe
+```
 
 ---
 
@@ -168,7 +176,7 @@ GameNative is a general game library with Steam, GOG, Epic, Amazon, EA and Rocks
 - **Package-name fixes:** several paths were hard-coded to `app.gamenative`: the bionic library path rewrite (`WINEMU_HOST_PKG` / `HOST_PKG`), the gamepad shared-memory files, the DXVK state cache and the default drives. The controller path was the reason controllers didn't work.
 - **Small robustness fixes:** non-numeric container IDs no longer crash the ID parser, and the bionic redirect library is copied in if it's missing.
 - **Keyboard fixes:** GameNative's on-screen keyboard dropped shifted symbols (`@` came through as `2`), because it sent key codes without the character or the Shift key. The fix is in `Keyboard.java` and `IMEInputReceiver.kt`. The keyboard now always goes through the IME receiver, so it appears on the Thor's bottom screen.
-- **Battle.net auto-login:** native `login.txt` client authentication managed via Keystore-encrypted credentials (`ui/screen/wow/BattleNetSignIn.kt`). Eliminates coordinate-based typing macros in favor of the game client's built-in startup authentication, with configuration available directly from the launcher setup screen.
+- **Battle.net browser sign-in (BGS):** ports Battle.net's browser-auth flow to ARM64-native Wine, which is the only sign-in NetEase/CN accounts accept. A purpose-built helper (`tools/wow-session-bridge`, ARM64 PE, loopback-only) performs the session handoff over a nonce-authenticated socket and writes the launch credential DPAPI-protected into the prefix registry; the Android side speaks Battle.net's BGS protocol directly (`ui/screen/wow/auth/`). This replaced the earlier Keystore/token and `login.txt` paths, which are removed. See [`BATTLE_NET_BROWSER_LOGIN.md`](BATTLE_NET_BROWSER_LOGIN.md).
 - **Native In-App Game Updater (v2.0):** Live version check against Blizzard patch services, direct-from-CDN ARM64 binary and manifest downloads, CASC index synchronization, and atomic `.build.info` updates on-device over Wi-Fi without any PC dependency.
 - **Lean runtime & startup:** eliminated continuous background accelerometer polling during gameplay in favor of native OS window management, removed cold-boot bitmap allocations, guarded background performance metric collection loops, and switched DNS to native platform resolution.
 - **Removed:** every store backend (Steam and JavaSteam, GOG, Epic, Amazon, EA, Rockstar), library, login, settings, custom game scanner, and downloads screens, ExoPlayer and browser dependencies, `DownloadService`, `ContainerMigrator`, Nexus mod management, the Meta Quest/XR build, PostHog analytics, Play Integrity, the self-updater, the Room database, the notification prompt, extra bundled Box64/FEX/DXVK versions and the legacy (Android 9) build. That's roughly 135k lines of code and about half the APK size.
