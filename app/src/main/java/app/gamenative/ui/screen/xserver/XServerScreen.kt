@@ -3608,15 +3608,6 @@ private fun setupXEnvironment(
     // read user preferences
     val enableWineDebug = PrefManager.enableWineDebug
     val enableBox86Logs = WinlatorPrefManager.getBoolean("enable_box86_64_logs", false)
-    val wineDebugChannels = PrefManager.wineDebugChannels
-    // explicitly enable or disable Wine debug channels
-    envVars.put(
-        "WINEDEBUG",
-        if (enableWineDebug && wineDebugChannels.isNotEmpty())
-            "+" + wineDebugChannels.replace(",", ",+") + ",+winsock"
-        else
-            "+winsock",
-    )
     // capture debug output to file if either Wine or Box86/64 logging is enabled
     var logFile: File? = null
     val captureLogs = enableWineDebug || enableBox86Logs
@@ -3669,7 +3660,8 @@ private fun setupXEnvironment(
         guestProgramLauncherComponent.setSteamType(container.getSteamType())
 
         envVars.putAll(container.envVars)
-        envVars.put("WINEDEBUG", "err+all")
+        // Wine logging costs CPU on every FIXME/ERR. Keep it off for play; the preference turns it back on.
+        envVars.put("WINEDEBUG", if (enableWineDebug) "err+all" else "-all")
         envVars.remove("DXVK_FRAME_RATE")
         envVars.remove("VKD3D_FRAME_RATE")
         if (!envVars.has("WINEESYNC")) envVars.put("WINEESYNC", "1")

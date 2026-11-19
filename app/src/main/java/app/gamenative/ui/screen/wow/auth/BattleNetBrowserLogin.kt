@@ -153,8 +153,7 @@ internal object BattleNetBrowserLogin {
             // Never expose provider payloads, redirect URLs, credentials or arbitrary peer output.
             // A JSON parse detail or exception class is safe and makes the failing step identifiable.
             val detail = if (error is JSONException) " ${error.message}" else " (${error.javaClass.simpleName})"
-            fail(attempt, "Browser sign-in could not start the game$detail. " +
-                "You can retry or switch back to password login in the launcher.")
+            fail(attempt, "Browser sign-in could not start the game$detail. You can retry.")
         } finally {
             attempt.close()
             synchronized(this) { if (active === attempt) active = null }

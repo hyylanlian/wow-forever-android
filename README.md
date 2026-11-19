@@ -95,6 +95,7 @@ Once your game files and Battle.net credentials are configured, the app automati
 - **Battle.net sign-in:** enable **Browser login** on the setup screen, then tap Play. The app runs a small ARM64 helper inside the prefix, opens Battle.net's official web sign-in (the NetEase account page on CN), and hands that session to the client through Battle.net's own browser-auth service protocol. Nothing is typed into the game and no password is stored on the device: the launch-only credential is written DPAPI-protected into the prefix registry and consumed by that launch. Any stale `_forever_/login.txt` is deleted first, because an empty one would force the password path. See [`BATTLE_NET_BROWSER_LOGIN.md`](BATTLE_NET_BROWSER_LOGIN.md).
   - Accounts with an authenticator still enter the code on the sign-in page. The game keeps running when you switch apps, so you can copy a code from an authenticator app on the same device.
   - Each install shows Battle.net its own Windows PC identity (machine ID and a `DESKTOP-XXXXXXX` computer name), generated once and kept across updates. Reinstalling the app creates a new one, so Battle.net may treat it as a new device.
+- **Frame rate:** tuning notes, and the order to try them in, live in [`PERFORMANCE.md`](PERFORMANCE.md).
 
 ---
 
