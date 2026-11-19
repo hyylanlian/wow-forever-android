@@ -147,6 +147,8 @@ sh tools/wow-session-bridge/build.sh <llvm-mingw>/bin/aarch64-w64-mingw32-clang 
     app/src/main/assets/wow-session-bridge.exe
 ```
 
+Upstream releases are tracked by a curated port rather than a git merge (the histories are unrelated); what we take, what we keep, and why is in [`UPSTREAM_MERGE.md`](UPSTREAM_MERGE.md).
+
 ---
 
 ## Credits and how it works
