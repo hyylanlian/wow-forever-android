@@ -1,76 +1,67 @@
 # Frame-rate plan
 
-What is already tuned, what to try next, and how to tell whether a change actually helped. Every item
-below is a single-variable A/B: change one thing, measure, keep or revert.
+What is tuned today, the levers that remain, in the order they should be tried, and why each one
+matters on this stack (Snapdragon 8 Elite / Adreno 830, Turnip + DXVK on ARM64EC Wine).
 
-## Measure first
+## The two different problems
 
-- Same place, same character, same camera: e.g. stand still in a capital city for 3 minutes, then fly a
-  fixed route for 2 minutes. Record **min / average FPS** from the FPS overlay (the container sets
-  `showFPS=true`), not a single glance.
-- Note the phone's thermal state and battery level. This device throttles; a run after a long session is
-  not comparable to a cold run. Wait 10 minutes between A/B runs.
-- Keep `WINEDEBUG` off while measuring (see Tier 0). Logging shows up as stutter, not as a lower average.
+- **Throughput** (average FPS): limited by Adreno fill rate, memory bandwidth and thermal throttle.
+- **Stutter** (minimum FPS): limited by shader-compilation pauses, synchronisation round-trips and
+  thermal spikes.
 
-## Tier 0 — already applied
+A change that helps one often does nothing for the other. First measure which one dominates.
 
-| Change | Why |
+## Step 0 — measure and classify (one session)
+
+Enable the HUD for one session:
+
+```
+DXVK_HUD=fps,frametimes,compiler
+```
+
+- `compiler` lines spiking while moving to new areas → shader-compile stutter → warm the cache first
+  (play through each zone once); `dxvk.numCompilerThreads` only matters here.
+- smooth FPS that drops over 10+ minutes → thermal throttle → lower the quality settings, not the app.
+- constant low average at 720p with few spikes → fill/bandwidth-bound → the LRZ and render-scale
+  experiments below.
+
+Same protocol for every A/B: same place, 3 min static + 2 min flight, cold device, 10 min between runs,
+record min/average FPS. Change exactly one variable per run.
+
+## Already in place
+
+| Setting | Why |
 | :--- | :--- |
-| `WINEDEBUG=-all` unless the Wine-debug preference is on | Every `FIXME`/`ERR` costs a format + write on the render thread's process. Previously `err+all` ran in every session. |
-| `MESA_SHADER_CACHE_MAX_SIZE=512MB`, cache not disabled | Recompiling shaders is the largest first-run stutter source. |
-| `MESA_VK_WSI_PRESENT_MODE=mailbox` | Latest-frame presentation instead of a FIFO queue. |
-| Resolution default 720p on Adreno 8xx | Fill rate is the dominant cost on this GPU; 1080p is a big step down in frame time. |
+| `WINEDEBUG=-all` by default | Formatting + writing every `FIXME`/`ERR` costs CPU on the render path; the debug preference restores `err+all`. |
+| `MESA_SHADER_CACHE_MAX_SIZE=512MB` | Shader recompiles are the largest first-run stutter source. |
+| `MESA_VK_WSI_PRESENT_MODE=mailbox` | Present the newest frame; no FIFO queue lag. |
+| 720p default on Adreno 8xx | Fill rate dominates; 1080p nearly doubles frame cost. |
+| `nolrz` in `TU_DEBUG` | Matches the config this game was validated with; see the LRZ experiment. |
 
-Never reintroduce `WINEDEBUG=+seh`: it slows exception dispatch enough to trip the anti-cheat's
-`udf` + `cntvct_el0` timing check.
+Never set `WINEDEBUG=+seh`: slow exception dispatch trips the anti-cheat's `udf` + `cntvct_el0` check.
 
-## Tier 1 — environment A/B (cheap, reversible)
+## The remaining levers, in priority order
 
-Change these in the container's environment (or `containerConfig`), one at a time.
+| # | Experiment | Mechanism (why it can win) | Risk | Revert |
+| :-- | :--- | :--- | :--- | :--- |
+| 1 | **`WINEESYNC=1`** | Sync is the big one. `PROTON_NO_NTSYNC=1` kills the new ntsync driver and `WINEESYNC=0` kills classic esync, so every wait/signal is a wineserver round-trip (syscall + IPC) on 8 cores. Esync is the old userspace eventfd mechanism — **not** the ntsync driver that hung the socket earlier — and it is the standard Proton fast path. Expected: better CPU-bound throughput and less stutter. | Login/anti-cheat behaviour unknown; if the client stalls or the socket handoff misbehaves, undo. | 1-line env |
+| 2 | **LRZ: drop `nolrz`** | Adreno's low-resolution-Z rejects hidden pixels before shading. WoW is overdraw-heavy (foliage, alpha). `nolrz` disables LRZ for correctness; if this Turnip build handles it, early-Z rejection can lift minimum FPS in dense scenes by a visible margin. | LRZ bugs on Turnip are classic: flickering geometry or missing particles on some surfaces. Test visually, not just FPS. | 1-line env |
+| 3 | **Turnip variant A/B** | `Turnip-V32-RP6sched` (current, tuned for gen8 by arusiasotto) vs `Turnip-WoW-scheduler-test` (the Adreno 740 default, `noconform`). Different scheduler/UBWC handling can be worth several frames. Expect RP6sched to stay, but measure once. | Rendering regressions | switch the driver asset |
+| 4 | **`dxvk.cachedDynamicResources = c`** (DXVK_CONFIG) | Constant-buffer uploads are a known stall on Adreno; caching them avoids repeated map/copy. The Battle.net container used the `vic` variant of this trick for CEF. | None known | 1-line env |
+| 5 | **`dxvk.maxFrameLatency = 1`** | Lower input latency, tiny throughput cost. Quality-of-play, not FPS. | Minor | 1-line env |
+| 6 | **In-game render scale + sliders** | Render scale 0.8 with the game's own sharpening (or FSR if offered) keeps UI sharp while cutting shading cost; shadows and liquid detail are the cheapest wins on Adreno, view distance next. | Visual | in-game |
+| 7 | **`wow64Mode=false` for the game container** | The client is native ARM64 and the 32-bit Proton half was already trimmed from the APK, so the WoW64 layer is vestigial — fewer loader modules and thunks. | The ARM64EC build may be "wow64-only": Winlator might need this flag to pick the right loader. Smoke-test container creation + boot; if it fails, revert immediately. | 1 field |
+| 8 | **Later: newer DXVK aarch64** | 2.5.x carries Adreno-specific dynamic-state and barrier fixes. Needs a new component build (not available in-repo). | New surface | new component |
 
-1. **`WINEESYNC=1`** (currently `0`, with `PROTON_NO_NTSYNC=1`). Synchronisation goes through the Wine
-   server today. Esync is usually a clear win in CPU-bound scenes. If the client hangs, logs in slowly or
-   the anti-cheat complains, revert to `0`.
-2. **DXVK frame latency**: add `dxvk.maxFrameLatency = 1` to `DXVK_CONFIG`. Lower input latency; may cost
-   a little throughput.
-3. **DXVK compiler threads**: `dxvk.numCompilerThreads = 4` (default 0 = auto). Only helps shader-compile
-   stutter, not steady-state FPS.
-4. **Turnip variant**: two wheels ship (`turnip-V32-RP6sched.zip`, `turnip-wow-scheduler-test.zip`). The
-   scheduler-test build targets this class of GPU; A/B them and keep the faster one for the default
-   profile.
-5. **`TU_DEBUG=nolrz`**: the gen8 branch appends it. Try with and without; some Turnip builds are faster
-   with LRZ on, others misrender with it.
-6. **Resolution 900p vs 720p**: if 900p holds the same minimum FPS, take the sharper image; if not, stay
-   at 720p.
+## Explicitly not worth it
 
-## Tier 2 — structural (needs a container smoke test)
+- `mesa_glthread`, `ZINK_*`: OpenGL-only; the game is D3D11→Vulkan. Removing them is cosmetic.
+- `VKD3D_SHADER_MODEL`: D3D12-only.
+- `PULSE_LATENCY_MSEC=144`: audio buffering, no FPS effect.
+- 900p/1080p: fill-rate-bound; chasing resolution is the wrong direction on this GPU.
 
-7. **`wow64Mode=false` for the game container.** The client is native ARM64; the 32-bit half of the
-   prefix exists only for compatibility. Fewer loaded modules and thunks can help startup and memory.
-   Verify container creation, `wineboot`, and that the game still launches before keeping it. The
-   Battle.net container is gone, so nothing else needs WoW64.
-8. **Remove GL-only environment**: `mesa_glthread` and `ZINK_*` do nothing under DXVK/Vulkan. Harmless to
-   drop; keeps the environment honest.
-9. **Drop `VKD3D_SHADER_MODEL`**: the client is D3D11 via DXVK. Only relevant if D3D12 is ever used.
+## Thermal
 
-## Tier 3 — game side (no app change)
-
-10. In-game graphics: shadows and liquid detail are the cheapest wins on Adreno; view distance next.
-11. `SET gxApi "D3D11"` is forced by the launcher; keep it.
-12. Optional `/console gxRestart` after changing render settings so the new pipeline is used immediately.
-
-## Profiling (when a change is unclear)
-
-- `DXVK_HUD=fps,frametimes,compiler` (or `DXVK_HUD=1`) gives a frame-time graph; `compiler` shows shader
-  compilation spikes. Enable it only for the measurement run.
-- `DXVK_LOG_LEVEL=info` plus `WINEDEBUG=err+all` for a one-off diagnostic session; turn both back off.
-- `last-run.log` is written under the app's external files dir when Wine logging is enabled. It is empty
-  on purpose during normal play.
-
-## Order to try
-
-1. `WINEESYNC=1` (biggest expected win)
-2. DXVK `maxFrameLatency = 1` (latency, near-free)
-3. Turnip variant + `nolrz` A/B
-4. `wow64Mode=false`
-5. In-game graphics sliders
+Adreno 830 throttles hard under sustained load; the highest sustained average usually comes from
+720p + low shadows + the device's performance/cooling mode, not from GPU-side tweaks. If a "boost" is
+only visible in the first three minutes, the change did nothing for sustained play.
