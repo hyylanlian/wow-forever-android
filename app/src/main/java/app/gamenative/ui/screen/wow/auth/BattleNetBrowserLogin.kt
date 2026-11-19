@@ -234,7 +234,10 @@ internal object BattleNetBrowserLogin {
     fun guestExited() {
         val attempt = active
         if (attempt != null && mutableUi.value !is Ui.Idle && mutableUi.value !is Ui.Failed) {
-            mutableUi.value = Ui.Failed("The Wine login helper stopped before sign-in completed.")
+            val log = attempt.bridgeLog().trim()
+            mutableUi.value = Ui.Failed(if (log.isEmpty())
+                "The Wine login helper stopped before sign-in completed."
+                else "The Wine login helper stopped before sign-in completed.\n\nHelper log:\n$log")
         }
         cancel(preserveFailure = true)
     }
@@ -247,6 +250,11 @@ internal object BattleNetBrowserLogin {
         @Volatile var cancelled = false
         var job: Job? = null
         var watchdog: Job? = null
+        fun bridgeLog(): String {
+            val log = File(request.parentFile, "bridge.log")
+            if (!log.exists() || !log.canRead()) return ""
+            return runCatching { log.readText() }.getOrDefault("")
+        }
         fun close() {
             runCatching { client.getAndSet(null)?.close() }
             runCatching { bridge.close() }
