@@ -46,8 +46,9 @@ int bridge_device_puts(const char *value) {
  * diagnostic lines to several places the player can reach: the game's own
  * directory, the Download drive, and the helper's directory as a fallback. */
 static void write_log(const WCHAR *path, const char *line, int n) {
-    HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file != INVALID_HANDLE_VALUE) {
+        SetFilePointer(file, 0, NULL, FILE_END);
         DWORD written = 0;
         WriteFile(file, line, (DWORD)n, &written, NULL);
         CloseHandle(file);
