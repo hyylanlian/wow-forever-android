@@ -82,7 +82,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}-${{ github.run_attempt }}-vc$(( 248 + ${{ github.run_number }} ))
+          tag_name: build-${{ github.run_number }}-${{ github.run_attempt }}-vc${{ 248 + github.run_number }}
           name: WoW Forever（Battle.net 登录）build ${{ github.run_number }}
           files: WoW-Forever.apk
           prerelease: true
