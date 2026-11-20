@@ -6,7 +6,7 @@ import java.util.zip.ZipFile
 
 /**
  * Installs add-ons from a downloaded .zip into the game's Interface/AddOns folder, so players don't need a PC to add
- * them. There's no catalog or update checking; players download add-ons themselves.
+ * them. The Wago catalogue in [AddonManager] feeds this for search/download/update; manual ZIP imports use it too.
  */
 internal object AddonImporter {
     // Flavor suffixes on .toc names, e.g. "Details_Mainline.toc" belongs to the "Details" folder.

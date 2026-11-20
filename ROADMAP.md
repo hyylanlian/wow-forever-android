@@ -1,8 +1,8 @@
 # Distribution roadmap (before the frame-rate work)
 
 Priority: make the app safe and usable for other players first, then chase FPS. The four workstreams
-below are planned in dependency order, with scope, source choices and risks. Nothing here is
-implemented yet; it is the plan to review.
+below are in dependency order, with scope, source choices and risks. Identity, drivers and the add-on
+manager have landed; resolution documentation remains.
 
 ## 0. Current state (what we build on)
 
@@ -12,7 +12,8 @@ implemented yet; it is the plan to review.
 - **Resolution**: `RenderResolution` sets the container's `screenSize` — the Wine desktop / X server
   size the game renders into. The panel upscales it. So "Resolution" is the real in-game render
   resolution (720p/900p/1080p), the single largest GPU cost dial; it is not the phone's panel mode.
-- **Add-ons**: `AddonImporter` installs from a local zip only (no catalog, no update check).
+- **Add-ons**: `AddonImporter` installs local zips; `WagoAddonSource`/`AddonManager` add Wago search,
+  install and update checks (see section 3).
 - **Identity**: `WowMachineIdentity` generates a random identity once per install into app storage,
   writes MachineGuid / install date / computer name / volume serial / Qualcomm CPU strings into the
   prefix. Uniqueness relies on `SecureRandom` alone; a backup restored to another device would copy
@@ -61,23 +62,25 @@ demand and selectable per container.
 - **Validation**: each new catalog entry is smoke-tested on this device (V2546A / Adreno 840) before
   being marked recommended; everything else ships as "experimental".
 
-## 3. Add-on manager: search, download, update (L effort)
+## 3. Add-on manager: search, download, update (L effort) — implemented
 
-Reuse `AddonImporter` for installs; add a catalog and an update check.
+Search, install and update are live behind the setup screen's **插件** row.
 
-- **Data source**: start with **Wago (wago.tools)** — no API key, per-addon metadata and file URLs;
-  fall back to **GitHub releases** for add-ons that publish there. **CurseForge** is the community
-  default but needs an API key and is unreliable from CN, so it is a later, optional backend. Design
-  the fetcher behind an interface (`AddonSource`) so backends are swappable.
-- **Search/browse UI**: a dedicated screen or dialog: search box, results (name, author, summary,
-  version, game flavor mainline/classic), install button. Downloads go through the existing
-  mirror/fallback network stack; unpack via `AddonImporter` into `_forever_/Interface/AddOns`.
-- **Update detection**: parse each installed add-on's `.toc` (`## Version:`, `## Interface:`) and
-  compare with the catalog's latest; "Update all" replaces folders in place. Skip-version and
-  per-addon pinning for details.
-- **Phases**: (a) search + install, (b) update check + batch update, (c) favorites and config backup.
-- **CN note**: wago.tools reachability from CN must be verified first; if blocked, the GitHub-releases
-  backend becomes the primary.
+- **Data source**: **Wago Addons (`addons.wago.io`)**. Wago has no public search API, so
+  `WagoAddonSource` reads the server-rendered Inertia payload and uses the `forever` release's
+  short-lived download link. Add-ons that don't publish a Forever build are shown as unsupported.
+  **CurseForge** remains a later, optional backend (API key, unreliable from CN); a GitHub-releases
+  backend can be added without touching the UI if Wago becomes unreachable.
+- **Search/install**: `AddonManagerDialog` → search box, results (name, author, summary, updated),
+  install/reinstall, progress. Downloads go through `Net`; `AddonImporter` unpacks into
+  `_forever_/Interface/AddOns` in place, so SavedVariables survive.
+- **Update detection**: the manager records the Wago slug, release label and installed folders in
+  `wow_addons` prefs; `.toc` title/version/interface are parsed for display. "检查更新" fetches each
+  slug's latest Forever release, and single or **全部更新** reinstalls changed folders.
+- **Manual installs**: folders copied in by hand still appear, marked manual, without update checks.
+- **CN note**: `addons.wago.io` was reachable during implementation (no CN-specific mirror is in
+  use). If it is blocked, install from a ZIP still works; add a mirror/source before relying on the
+  catalogue there.
 
 ## 4. Resolution clarification and small extras (S effort)
 
@@ -94,7 +97,7 @@ Reuse `AddonImporter` for installs; add a catalog and an update check.
 | 1 | Identity uniqueness + transparency | S–M | ✅ done (`wow_identity.dat` Keystore blob, device fingerprint, Identity dialog + reset) |
 | 2a | Driver catalog + picker | M | ✅ done (per-family `DriverCatalog`, Driver dialog, persisted selection) |
 | 2b | Driver online download | M | ✅ pipeline done (`drivers.json` fetch + sha256 + unpack + Use); ⏳ a Drivers-CI that publishes new builds |
-| 3 | Add-on manager | L | ⏳ pending (wago.tools first, phased) |
+| 3 | Add-on manager | L | ✅ search/install/update via Wago; manual ZIPs listed; no favorites/config backup yet |
 | 4 | Resolution doc + 1440p | S | ⏳ pending |
 
 Performance work (`PERFORMANCE.md`) stays parked behind these; the Max/Standard presets already ship.

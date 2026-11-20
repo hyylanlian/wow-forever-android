@@ -116,6 +116,8 @@ fun WoWForeverScreen(
     var showIdentityResetConfirm by remember { mutableStateOf(false) }
     var driverChoice by remember { mutableStateOf(DriverCatalog.current(context, gpu.family)) }
     var showDriverDialog by remember { mutableStateOf(false) }
+    var showAddonManager by remember { mutableStateOf(false) }
+    var addonRefreshKey by remember { mutableStateOf(0) }
     var remoteDrivers by remember { mutableStateOf<List<DriverCatalog.RemoteDriver>>(emptyList()) }
     var driverProgress by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
     var driverError by remember { mutableStateOf<String?>(null) }
@@ -326,6 +328,7 @@ fun WoWForeverScreen(
                         zip.delete()
                     }
                 }
+                addonRefreshKey++
                 SnackbarManager.show("Installed ${installed.joinToString()}")
             } catch (e: Exception) {
                 Timber.e(e, "Add-on import failed")
@@ -710,9 +713,8 @@ fun WoWForeverScreen(
                         }
                         if (!files.needsInstall) {
                             LinkButton("游戏目录", Icons.Default.FolderOpen) { folderPicker.launch(null) }
-                            // Some file managers label zips as generic binary files, so both types are offered.
                             LinkButton("插件", Icons.Default.Extension, enabled = !isLaunching && !isUpdating) {
-                                addonPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                                showAddonManager = true
                             }
                         }
                         LinkButton(
@@ -818,6 +820,18 @@ fun WoWForeverScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showDriverDialog = false }) { Text("关闭") }
+            },
+        )
+    }
+
+    if (showAddonManager) {
+        AddonManagerDialog(
+            addonsDir = File(gamePath, "$FLAVOR_DIR/Interface/AddOns"),
+            refreshKey = addonRefreshKey,
+            onDismiss = { showAddonManager = false },
+            onImportZip = {
+                // Some file managers label zips as generic binary files, so both types are offered.
+                addonPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
             },
         )
     }
