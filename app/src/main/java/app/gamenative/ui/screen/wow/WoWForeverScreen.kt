@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
@@ -110,6 +111,8 @@ fun WoWForeverScreen(
     var identity by remember { mutableStateOf(WowMachineIdentity.load(context)) }
     var showIdentityDialog by remember { mutableStateOf(false) }
     var showIdentityResetConfirm by remember { mutableStateOf(false) }
+    var driverChoice by remember { mutableStateOf(DriverCatalog.current(context, gpu.family)) }
+    var showDriverDialog by remember { mutableStateOf(false) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
@@ -224,7 +227,7 @@ fun WoWForeverScreen(
             try {
                 val screenSize = fitScreenSizeToWindow(context, resolution.size)
                 val containerId = withContext(Dispatchers.IO) {
-                    prepareLaunch(context, File(gamePath), gpu, screenSize) { msg ->
+                    prepareLaunch(context, File(gamePath), gpu, screenSize, driverChoice) { msg ->
                         scope.launch(Dispatchers.Main) { statusText = msg }
                     }
                 }
@@ -714,12 +717,53 @@ fun WoWForeverScreen(
                             PerfMode.save(context, perfMode)
                         }
                         LinkButton("Identity", Icons.Default.Info) { showIdentityDialog = true }
+                        LinkButton("Driver", Icons.Default.Build) { showDriverDialog = true }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+
+    if (showDriverDialog) {
+        AlertDialog(
+            onDismissRequest = { showDriverDialog = false },
+            title = { Text(text = "Graphics driver (${gpu.family})", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DriverCatalog.candidates(gpu.family).forEach { entry ->
+                        val selected = entry.name == driverChoice.name
+                        TextButton(
+                            onClick = {
+                                driverChoice = entry
+                                DriverCatalog.save(context, entry)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = (if (selected) "✓ " else "") + entry.name +
+                                        (if (entry.recommended) " (recommended)" else ""),
+                                    color = if (selected) WowGold else Color(0xFFCBD5E1),
+                                    fontSize = 14.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                )
+                                Text(entry.note, color = Color(0xFF7D8CA3), fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    Text(
+                        "Takes effect on the next launch. A driver that misrenders can always be switched back to the recommended one.",
+                        color = Color(0xFF7D8CA3),
+                        fontSize = 12.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDriverDialog = false }) { Text("Close") }
+            },
+        )
     }
 
     if (showIdentityDialog) {
@@ -1192,13 +1236,13 @@ private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
-private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
+private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String, val family: String) {
     companion object {
         fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
             // nolrz 对齐 WoWBox（同设备跑通）；去掉 noconform,sysmem —— sysmem 在 Adreno 8xx 上是闪屏常见源。
-            GpuProfile(ADRENO_8XX_DRIVER, "nolrz", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
+            GpuProfile(ADRENO_8XX_DRIVER, "nolrz", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx", "a8xx")
         } else {
-            GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740")
+            GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740", "a7xx")
         }
 
         private fun isAdreno8xxDevice(context: Context): Boolean {
@@ -1235,7 +1279,7 @@ internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int
     return "${(width / 2).roundToInt() * 2}x${(height / 2).roundToInt() * 2}"
 }
 
-private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, onStatus: (String) -> Unit): String {
+private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, driver: DriverEntry, onStatus: (String) -> Unit): String {
     installBundledComponents(context, onStatus)
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
@@ -1258,7 +1302,7 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 
     onStatus("Configuring ${gpu.label} container...")
     val containerManager = ContainerManager(context)
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), PerfMode.load(context))
+    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), PerfMode.load(context), driver)
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
@@ -1273,6 +1317,40 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
         File(gameRoot, "${FLAVOR_DIR}/login.txt").delete()
     }
     return CONTAINER_ID
+}
+
+/** Per-GPU-family Turnip candidates. New builds land here once a driver CI publishes them. */
+private data class DriverEntry(
+    val name: String,
+    val tuDebug: String,
+    val note: String,
+    val recommended: Boolean,
+)
+
+private object DriverCatalog {
+    private val CATALOG = mapOf(
+        "a8xx" to listOf(
+            DriverEntry("Turnip-V32-RP6sched", "nolrz", "Tuned for Adreno 8xx (RP6 scheduler build)", true),
+            DriverEntry("Turnip-WoW-scheduler-test", "noconform", "Adreno 7xx default; try it if the recommended one misrenders", false),
+        ),
+        "a7xx" to listOf(
+            DriverEntry("Turnip-WoW-scheduler-test", "noconform", "Stable default for Adreno 740", true),
+            DriverEntry("Turnip-V32-RP6sched", "nolrz", "Gen8 build; try it if the default one misrenders", false),
+        ),
+    )
+
+    private const val PREFS = "wow_driver"
+
+    fun candidates(family: String): List<DriverEntry> = CATALOG[family] ?: CATALOG.getValue("a7xx")
+
+    fun current(context: Context, family: String): DriverEntry {
+        val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("driver", null)
+        return candidates(family).firstOrNull { it.name == saved } ?: candidates(family).first()
+    }
+
+    fun save(context: Context, entry: DriverEntry) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("driver", entry.name).apply()
+    }
 }
 
 /** Two container profiles: Standard for passive cooling, Max for playing on a cooler. */
@@ -1290,7 +1368,7 @@ private enum class PerfMode(val pref: String) {
     }
 }
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity, perfMode: PerfMode): JSONObject {
+private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity, perfMode: PerfMode, driver: DriverEntry): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     // Max (cooler): esync replaces wineserver round-trips, and DXVK caches dynamic resources.
     // Standard keeps the validated defaults. PROTON_NO_NTSYNC stays in both: the ntsync driver hung sockets here.
@@ -1298,15 +1376,15 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         "WINEESYNC=1 DXVK_CONFIG=dxvk.cachedDynamicResources=c,dxvk.maxFrameLatency=1"
     else
         "WINEESYNC=0"
-    val envVars = "PROTON_NO_NTSYNC=1 WINEDEBUG=+winsock WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true $syncEnv MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+    val envVars = "PROTON_NO_NTSYNC=1 WINEDEBUG=+winsock WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true $syncEnv MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${driver.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
         put("screenSize", screenSize)
         put("envVars", envVars)
         put("graphicsDriver", "Wrapper")
-        put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        put("graphicsDriverVersion", driver.name)
+        put("graphicsDriverConfig", "version=${driver.name},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
         put("displayRenderer", "vulkan")
         put("dxwrapper", "dxvk-$DXVK_VERSION-1")
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")

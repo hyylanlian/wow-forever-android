@@ -33,6 +33,11 @@ wrong, and it blocks distribution.
 
 ## 2. Driver adaptation, selection and online update (M effort)
 
+Landed: a per-family catalog (`DriverCatalog`) with the two bundled Turnip builds (a8xx →
+`Turnip-V32-RP6sched` recommended, a7xx → `Turnip-WoW-scheduler-test` recommended, plus the
+cross-choice), a **Driver** picker on the setup screen with notes, and the choice persisted and applied
+to the container (`graphicsDriverVersion` + `TU_DEBUG`) on the next launch. Remaining: the online part.
+
 Model on DroidDeck: a curated per-GPU-family catalog plus CI-built weekly drivers, downloaded on
 demand and selectable per container.
 
