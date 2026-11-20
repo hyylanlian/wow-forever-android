@@ -10,11 +10,13 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
 
 object AppUpdater {
-    private const val RELEASES_URL = "https://api.github.com/repos/jaredgei/wow-forever-android/releases/latest"
+    // Our CI publishes every build as a prerelease, so /releases/latest would miss them.
+    private const val RELEASES_URL = "https://api.github.com/repos/hyylanlian/wow-forever-android/releases?per_page=5"
 
     data class Release(
         val version: String,
@@ -24,28 +26,17 @@ object AppUpdater {
         val sizeBytes: Long,
     )
 
-    fun isNewer(latest: String, current: String = BuildConfig.VERSION_NAME): Boolean {
-        val parse = { v: String ->
-            v.trimStart('v', 'V')
-                .split('-', '_', '+')[0]
-                .split('.')
-                .mapNotNull { it.toIntOrNull() }
-        }
-        val l = parse(latest)
-        val c = parse(current)
-        for (i in 0 until maxOf(l.size, c.size)) {
-            val lv = l.getOrElse(i) { 0 }
-            val cv = c.getOrElse(i) { 0 }
-            if (lv > cv) return true
-            if (lv < cv) return false
-        }
-        return false
+    // Release tags embed the versionCode: build-<run>-<attempt>-vc<code>. That integer is what matters
+    // (versionCode grows monotonically with every CI run), not the human-readable versionName.
+    fun isNewer(tag: String, currentCode: Int = BuildConfig.VERSION_CODE): Boolean {
+        val code = Regex("-vc(\\d+)").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: return false
+        return code > currentCode
     }
 
-    fun parseRelease(jsonString: String, currentVersion: String = BuildConfig.VERSION_NAME): Release? = runCatching {
+    fun parseRelease(jsonString: String, currentCode: Int = BuildConfig.VERSION_CODE): Release? = runCatching {
         val json = JSONObject(jsonString)
         val tag = json.optString("tag_name")
-        if (!isNewer(tag, currentVersion)) return null
+        if (!isNewer(tag, currentCode)) return null
 
         val assets = json.optJSONArray("assets") ?: return null
         for (i in 0 until assets.length()) {
@@ -65,7 +56,7 @@ object AppUpdater {
         null
     }.getOrNull()
 
-    suspend fun check(currentVersion: String = BuildConfig.VERSION_NAME): Release? = withContext(Dispatchers.IO) {
+    suspend fun check(currentCode: Int = BuildConfig.VERSION_CODE): Release? = withContext(Dispatchers.IO) {
         runCatching {
             val request = Request.Builder()
                 .url(RELEASES_URL)
@@ -75,7 +66,12 @@ object AppUpdater {
             Net.http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
                 val body = response.body?.string() ?: return@withContext null
-                parseRelease(body, currentVersion)
+                val array = JSONArray(body)
+                for (i in 0 until array.length()) {
+                    val release = parseRelease(array.getJSONObject(i).toString(), currentCode)
+                    if (release != null) return@withContext release
+                }
+                null
             }
         }.getOrElse {
             Timber.w(it, "AppUpdater check failed")

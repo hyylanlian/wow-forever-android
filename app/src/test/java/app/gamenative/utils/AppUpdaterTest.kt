@@ -1,7 +1,6 @@
 package app.gamenative.utils
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -10,97 +9,80 @@ import org.junit.Test
 class AppUpdaterTest {
 
     @Test
-    fun isNewer_higherPatch_returnsTrue() {
-        assertTrue(AppUpdater.isNewer("v2.1.3", "2.1.2"))
+    fun isNewer_tagWithHigherVersionCode_returnsTrue() {
+        assertTrue(AppUpdater.isNewer("build-85-1-vc333", 332))
     }
 
     @Test
-    fun isNewer_higherMinor_returnsTrue() {
-        assertTrue(AppUpdater.isNewer("2.2.0", "2.1.2"))
+    fun isNewer_sameVersionCode_returnsFalse() {
+        org.junit.Assert.assertFalse(AppUpdater.isNewer("build-85-1-vc332", 332))
     }
 
     @Test
-    fun isNewer_higherMajor_returnsTrue() {
-        assertTrue(AppUpdater.isNewer("v3.0.0", "2.1.2"))
+    fun isNewer_lowerVersionCode_returnsFalse() {
+        org.junit.Assert.assertFalse(AppUpdater.isNewer("build-84-1-vc331", 332))
     }
 
     @Test
-    fun isNewer_sameVersion_returnsFalse() {
-        assertFalse(AppUpdater.isNewer("v2.1.2", "2.1.2"))
-        assertFalse(AppUpdater.isNewer("2.1.2", "2.1.2"))
+    fun isNewer_tagWithoutVersionCode_returnsFalse() {
+        // Older tags (no -vc suffix) are never offered as updates.
+        org.junit.Assert.assertFalse(AppUpdater.isNewer("v2.4.5", 300))
+        org.junit.Assert.assertFalse(AppUpdater.isNewer("build-84-1", 300))
     }
 
     @Test
-    fun isNewer_olderVersion_returnsFalse() {
-        assertFalse(AppUpdater.isNewer("v2.1.1", "2.1.2"))
-        assertFalse(AppUpdater.isNewer("1.9.9", "2.1.2"))
-    }
-
-    @Test
-    fun isNewer_extraSegments_comparesCorrectly() {
-        assertTrue(AppUpdater.isNewer("v2.1.2.1", "2.1.2"))
-        assertFalse(AppUpdater.isNewer("2.1", "2.1.2"))
-    }
-
-    @Test
-    fun isNewer_handlesPrereleaseSuffix() {
-        assertFalse(AppUpdater.isNewer("v2.1.2-beta1", "2.1.2"))
-        assertTrue(AppUpdater.isNewer("v2.1.3-rc1", "2.1.2"))
-    }
-
-    @Test
-    fun parseRelease_validNewReleaseWithApk_parsesSuccessfully() {
+    fun parseRelease_newBuildWithApk_parsesSuccessfully() {
         val json = """
             {
-                "tag_name": "v2.1.3",
-                "name": "WoW Forever v2.1.3",
+                "tag_name": "build-85-1-vc333",
+                "name": "WoW Forever build 85",
                 "body": "Bug fixes and improvements",
                 "assets": [
                     {
                         "name": "WoW-Forever.apk",
-                        "browser_download_url": "https://github.com/jaredgei/wow-forever-android/releases/download/v2.1.3/WoW-Forever.apk",
+                        "browser_download_url": "https://github.com/hyylanlian/wow-forever-android/releases/download/build-85-1-vc333/WoW-Forever.apk",
                         "size": 160000000
                     }
                 ]
             }
         """.trimIndent()
 
-        val release = AppUpdater.parseRelease(json, "2.1.2")
+        val release = AppUpdater.parseRelease(json, 332)
 
         assertNotNull(release)
-        assertEquals("2.1.3", release?.version)
-        assertEquals("WoW Forever v2.1.3", release?.name)
+        assertEquals("build-85-1-vc333", release?.version)
+        assertEquals("WoW Forever build 85", release?.name)
         assertEquals("Bug fixes and improvements", release?.notes)
-        assertEquals("https://github.com/jaredgei/wow-forever-android/releases/download/v2.1.3/WoW-Forever.apk", release?.downloadUrl)
+        assertEquals("https://github.com/hyylanlian/wow-forever-android/releases/download/build-85-1-vc333/WoW-Forever.apk", release?.downloadUrl)
         assertEquals(160000000L, release?.sizeBytes)
     }
 
     @Test
-    fun parseRelease_sameOrOlderVersion_returnsNull() {
+    fun parseRelease_sameOrOlderBuild_returnsNull() {
         val json = """
             {
-                "tag_name": "v2.1.2",
-                "name": "WoW Forever v2.1.2",
+                "tag_name": "build-84-1-vc332",
+                "name": "WoW Forever build 84",
                 "body": "Existing release",
                 "assets": [
                     {
                         "name": "WoW-Forever.apk",
-                        "browser_download_url": "https://github.com/jaredgei/wow-forever-android/releases/download/v2.1.2/WoW-Forever.apk",
+                        "browser_download_url": "https://github.com/hyylanlian/wow-forever-android/releases/download/build-84-1-vc332/WoW-Forever.apk",
                         "size": 160000000
                     }
                 ]
             }
         """.trimIndent()
 
-        assertNull(AppUpdater.parseRelease(json, "2.1.2"))
+        assertNull(AppUpdater.parseRelease(json, 332))
     }
 
     @Test
     fun parseRelease_noApkAsset_returnsNull() {
         val json = """
             {
-                "tag_name": "v2.1.3",
-                "name": "WoW Forever v2.1.3",
+                "tag_name": "build-85-1-vc333",
+                "name": "WoW Forever build 85",
                 "body": "Source only release",
                 "assets": [
                     {
@@ -112,11 +94,11 @@ class AppUpdaterTest {
             }
         """.trimIndent()
 
-        assertNull(AppUpdater.parseRelease(json, "2.1.2"))
+        assertNull(AppUpdater.parseRelease(json, 332))
     }
 
     @Test
     fun parseRelease_invalidJson_returnsNull() {
-        assertNull(AppUpdater.parseRelease("not-json", "2.1.2"))
+        assertNull(AppUpdater.parseRelease("not-json", 332))
     }
 }

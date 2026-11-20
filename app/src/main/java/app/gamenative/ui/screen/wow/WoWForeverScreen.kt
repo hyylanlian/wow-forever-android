@@ -94,7 +94,7 @@ object WoWLauncherState {
 }
 
 private const val CONTAINER_ID = "wow_forever"
-private const val READY_STATUS = "Ready to launch"
+private const val READY_STATUS = "就绪，可启动"
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -124,7 +124,7 @@ fun WoWForeverScreen(
         if (showDriverDialog && remoteDrivers.isEmpty()) {
             driverError = null
             remoteDrivers = DriverCatalog.fetchRemote(context)
-            if (remoteDrivers.isEmpty()) driverError = "Couldn't reach the driver catalog."
+            if (remoteDrivers.isEmpty()) driverError = "无法连接驱动目录。"
         }
     }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
@@ -235,7 +235,7 @@ fun WoWForeverScreen(
         }
         isLaunching = true
         errorMessage = null
-        statusText = "Preparing components..."
+        statusText = "准备组件中…"
 
         launchJob = scope.launch {
             try {
@@ -245,7 +245,7 @@ fun WoWForeverScreen(
                         scope.launch(Dispatchers.Main) { statusText = msg }
                     }
                 }
-                statusText = "Booting into World of Warcraft..."
+                statusText = "正在启动魔兽世界…"
                 onLaunch(containerId)
             } catch (e: CancellationException) {
                 throw e
@@ -255,8 +255,8 @@ fun WoWForeverScreen(
                 denyStorageAccess()
             } catch (e: Exception) {
                 Timber.e(e, "Error launching WoW Forever")
-                errorMessage = e.message ?: "Launch failed"
-                statusText = "Launch failed"
+                errorMessage = e.message ?: "启动失败"
+                statusText = "启动失败"
                 isLaunching = false
             }
         }
@@ -376,7 +376,7 @@ fun WoWForeverScreen(
 
     fun performInstall() {
         showUpgradeDialog = false
-        downloadGameFiles("Install failed", { root, onStatus -> WowClientDownloader.install(root, region.cdnRegion, onStatus) }) {
+        downloadGameFiles("安装失败", { root, onStatus -> WowClientDownloader.install(root, region.cdnRegion, onStatus) }) {
             versionStatus = null
             if (checkFiles()) {
                 checkVersionStatus()
@@ -387,7 +387,7 @@ fun WoWForeverScreen(
 
     fun performUpdate() {
         val target = versionStatus ?: return
-        downloadGameFiles("Update failed", { root, onStatus -> WowClientDownloader.updateGame(root, target, onStatus) }) {
+        downloadGameFiles("更新失败", { root, onStatus -> WowClientDownloader.updateGame(root, target, onStatus) }) {
             checkFiles()
             versionStatus = target.copy(isOutdated = false, localVersion = target.remoteVersion)
             launchGame()
@@ -461,7 +461,6 @@ fun WoWForeverScreen(
                     color = WowGold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "${gpu.edition} Edition", fontSize = 11.sp, color = WowSubtle)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -474,40 +473,40 @@ fun WoWForeverScreen(
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    SectionTitle("ENVIRONMENT READINESS", WowGold)
+                    SectionTitle("环境就绪检查", WowGold)
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CheckItem(label = if (files.exeExists) "ARM64 Binary ($EXE_NAME)" else "ARM64 Binary (downloads on Play)", ready = files.exeExists)
-                        CheckItem(label = "Game Asset Archives (Data/)", ready = files.dataExists)
+                        CheckItem(label = if (files.exeExists) "ARM64 程序（$EXE_NAME）" else "ARM64 程序（Play 时下载）", ready = files.exeExists)
+                        CheckItem(label = "游戏资源（Data/）", ready = files.dataExists)
                         CheckItem(
                             label = when {
-                                files.isWrongGame -> "Install Info ($BUILD_INFO - requires $TARGET_PRODUCT)"
-                                files.isLegacyBeta -> "Install Info ($BUILD_INFO - beta, upgrade required)"
-                                else -> "Install Info ($BUILD_INFO)"
+                                files.isWrongGame -> "安装信息（$BUILD_INFO - 需要 $TARGET_PRODUCT）"
+                                files.isLegacyBeta -> "安装信息（$BUILD_INFO - beta，需要升级）"
+                                else -> "安装信息（$BUILD_INFO）"
                             },
                             ready = files.hasForever,
                         )
-                        CheckItem(label = "All Files Access Permission", ready = files.hasStorageAccess)
+                        CheckItem(label = "所有文件访问权限", ready = files.hasStorageAccess)
                         CheckItem(
-                            label = if (browserLogin) "Battle.net Login (browser sign-in enabled)" else "Battle.net Login (enable browser sign-in below)",
+                            label = if (browserLogin) "战网登录（浏览器登录已开启）" else "战网登录（请在下方开启浏览器登录）",
                             ready = browserLogin,
                         )
                         appUpdate?.let {
                             CheckItem(
-                                label = "App Build: v${BuildConfig.VERSION_NAME} (v${it.version} available)",
+                                label = "应用版本：v${BuildConfig.VERSION_NAME}（有新版 v${it.version}）",
                                 ready = false,
                             )
                         } ?: CheckItem(
-                            label = "App Build: v${BuildConfig.VERSION_NAME}",
+                            label = "应用版本：v${BuildConfig.VERSION_NAME}",
                             ready = true,
                         )
                         versionStatus?.let { version ->
                             CheckItem(
                                 label = if (version.isOutdated) {
-                                    "Client Build: ${version.localVersion} (Update ${version.remoteVersion} available)"
+                                    "客户端版本：${version.localVersion}（可更新到 ${version.remoteVersion}）"
                                 } else {
-                                    "Client Build: ${version.localVersion} (Up to date)"
+                                    "客户端版本：${version.localVersion}（已是最新）"
                                 },
                                 ready = !version.isOutdated,
                             )
@@ -565,18 +564,18 @@ fun WoWForeverScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Warning, contentDescription = null, tint = WowError, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            SectionTitle("GAME UPDATE REQUIRED", WowError)
+                            SectionTitle("游戏需要更新", WowError)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Live servers require build ${version.remoteVersion}, but local files are build ${version.localVersion}. Logging in may fail or disconnect at realm selection.",
+                            text = "正式服需要 ${version.remoteVersion} 版本，本地是 ${version.localVersion}。直接登录可能失败或断线。",
                             fontSize = 12.sp,
                             color = Color(0xFFFED7D7),
                             lineHeight = 16.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Tap Update below to download the latest files directly from Blizzard's CDN over Wi-Fi.",
+                            text = "点下方“更新”，通过 Wi-Fi 从暴雪 CDN 下载最新文件。",
                             fontSize = 11.sp,
                             color = Color(0xFFCBD5E1)
                         )
@@ -597,11 +596,11 @@ fun WoWForeverScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Refresh, contentDescription = null, tint = WowGold, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            SectionTitle("APP UPDATE AVAILABLE (v${update.version})", WowGold)
+                            SectionTitle("应用有新版本（v${update.version}）", WowGold)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "A new release is available on GitHub. Tap below to view notes and update.",
+                            text = "GitHub 上发布了新版本，点下方查看说明并更新。",
                             fontSize = 12.sp,
                             color = Color(0xFFCBD5E1),
                             lineHeight = 16.sp,
@@ -609,9 +608,9 @@ fun WoWForeverScreen(
                         Spacer(modifier = Modifier.height(10.dp))
                         PrimaryButton(
                             text = when {
-                                isDownloadingAppUpdate -> "DOWNLOADING UPDATE..."
-                                downloadedApk?.exists() == true -> "INSTALL UPDATE (v${update.version})"
-                                else -> "UPDATE APP (v${update.version})"
+                                isDownloadingAppUpdate -> "正在下载更新…"
+                                downloadedApk?.exists() == true -> "立即安装更新（v${update.version}）"
+                                else -> "更新应用（v${update.version}）"
                             },
                             icon = Icons.Default.Refresh,
                             enabled = !isDownloadingAppUpdate && !isLaunching && !isUpdating,
@@ -686,11 +685,11 @@ fun WoWForeverScreen(
                                 modifier = Modifier.fillMaxWidth(0.85f).height(48.dp),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
-                                Text(text = "LAUNCH ANYWAY (OUTDATED)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = WowError)
+                                Text(text = "仍然启动（版本过旧）", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = WowError)
                             }
                         }
                         else -> PrimaryButton(
-                            text = if (files.isWrongGame) "WOW FOREVER REQUIRED" else "PLAY WORLD OF WARCRAFT",
+                            text = if (files.isWrongGame) "需要 WoW Forever" else "开始游戏",
                             icon = Icons.Default.PlayArrow,
                             enabled = canPlay,
                             onClick = ::launchGame,
@@ -704,34 +703,34 @@ fun WoWForeverScreen(
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     ) {
-                        LinkButton("Refresh", Icons.Default.Refresh) {
+                        LinkButton("刷新", Icons.Default.Refresh) {
                             checkFiles()
                             checkVersionStatus()
                             checkAppUpdate()
                         }
                         if (!files.needsInstall) {
-                            LinkButton("Location", Icons.Default.FolderOpen) { folderPicker.launch(null) }
+                            LinkButton("游戏目录", Icons.Default.FolderOpen) { folderPicker.launch(null) }
                             // Some file managers label zips as generic binary files, so both types are offered.
-                            LinkButton("Add-on", Icons.Default.Extension, enabled = !isLaunching && !isUpdating) {
+                            LinkButton("插件", Icons.Default.Extension, enabled = !isLaunching && !isUpdating) {
                                 addonPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
                             }
                         }
                         LinkButton(
-                            text = if (browserLogin) "Browser login: On" else "Browser login: Off",
+                            text = if (browserLogin) "浏览器登录：开" else "浏览器登录：关",
                             icon = Icons.Default.Key,
                         ) {
                             browserLogin = !browserLogin
                             BattleNetBrowserLogin.setEnabled(context, browserLogin)
                         }
                         LinkButton(
-                            text = if (perfMode == PerfMode.MAX) "Performance: Max (cooler)" else "Performance: Standard",
+                            text = if (perfMode == PerfMode.MAX) "性能：满血（散热器）" else "性能：标准",
                             icon = Icons.Default.Speed,
                         ) {
                             perfMode = if (perfMode == PerfMode.MAX) PerfMode.STANDARD else PerfMode.MAX
                             PerfMode.save(context, perfMode)
                         }
-                        LinkButton("Identity", Icons.Default.Info) { showIdentityDialog = true }
-                        LinkButton("Driver", Icons.Default.Build) { showDriverDialog = true }
+                        LinkButton("设备身份", Icons.Default.Info) { showIdentityDialog = true }
+                        LinkButton("驱动", Icons.Default.Build) { showDriverDialog = true }
                     }
                 }
             }
@@ -743,7 +742,7 @@ fun WoWForeverScreen(
     if (showDriverDialog) {
         AlertDialog(
             onDismissRequest = { showDriverDialog = false },
-            title = { Text(text = "Graphics driver (${gpu.family})", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            title = { Text(text = "图形驱动（${gpu.family}）", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     DriverCatalog.candidates(gpu.family).forEach { entry ->
@@ -758,7 +757,7 @@ fun WoWForeverScreen(
                             Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     text = (if (selected) "✓ " else "") + entry.name +
-                                        (if (entry.recommended) " (recommended)" else ""),
+                                        (if (entry.recommended) "（推荐）" else ""),
                                     color = if (selected) WowGold else Color(0xFFCBD5E1),
                                     fontSize = 14.sp,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
@@ -772,7 +771,7 @@ fun WoWForeverScreen(
                     }
                     if (online.isNotEmpty()) {
                         HorizontalDivider(color = Color(0xFF1E2D44))
-                        Text("Online drivers", color = Color(0xFF7D8CA3), fontSize = 12.sp)
+                        Text("在线驱动", color = Color(0xFF7D8CA3), fontSize = 12.sp)
                         online.forEach { d ->
                             val installed = DriverCatalog.isInstalled(context, d.name)
                             val progress = driverProgress[d.name]
@@ -794,7 +793,7 @@ fun WoWForeverScreen(
                                         val entry = DriverEntry(d.name, d.tuDebug, d.note, false)
                                         driverChoice = entry
                                         DriverCatalog.save(context, entry)
-                                    }) { Text(if (driverChoice.name == d.name) "Selected" else "Use") }
+                                    }) { Text(if (driverChoice.name == d.name) "已选" else "使用") }
                                 } else {
                                     TextButton(onClick = {
                                         scope.launch {
@@ -804,21 +803,21 @@ fun WoWForeverScreen(
                                             }
                                             driverProgress = driverProgress - d.name
                                         }
-                                    }) { Text(if (progress != null) "${(progress * 100).toInt()}%" else "Download") }
+                                    }) { Text(if (progress != null) "${(progress * 100).toInt()}%" else "下载") }
                                 }
                             }
                         }
                     }
                     driverError?.let { Text(it, color = WowError, fontSize = 12.sp) }
                     Text(
-                        "Takes effect on the next launch. A driver that misrenders can always be switched back to the recommended one.",
+                        "下次启动生效。渲染异常时可随时切回推荐驱动。",
                         color = Color(0xFF7D8CA3),
                         fontSize = 12.sp,
                     )
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showDriverDialog = false }) { Text("Close") }
+                TextButton(onClick = { showDriverDialog = false }) { Text("关闭") }
             },
         )
     }
@@ -826,20 +825,19 @@ fun WoWForeverScreen(
     if (showIdentityDialog) {
         AlertDialog(
             onDismissRequest = { showIdentityDialog = false },
-            title = { Text(text = "Device identity", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            title = { Text(text = "设备身份", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
             text = {
                 Text(
-                    text = "Battle.net sees this install as the PC \"${identity.computerName}\". The identity is " +
-                        "generated once per install, stored encrypted on this device, and re-generated automatically " +
-                        "if app data is restored onto a different phone, so two devices never share one. Resetting " +
-                        "makes Battle.net treat this as a new PC and requires signing in again."
+                    text = "战网将本机识别为电脑 \"${identity.computerName}\"。身份在每个安装中只生成一次，加密存储在本机；" +
+                        "如果把应用数据恢复到另一台手机，会自动重新生成，确保两台设备不会共用同一身份。" +
+                        "重置后战网会将本机视为新电脑，需要重新登录。"
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showIdentityDialog = false }) { Text("Close") }
+                TextButton(onClick = { showIdentityDialog = false }) { Text("关闭") }
             },
             dismissButton = {
-                TextButton(onClick = { showIdentityResetConfirm = true }) { Text("Reset", color = WowError) }
+                TextButton(onClick = { showIdentityResetConfirm = true }) { Text("重置", color = WowError) }
             },
         )
     }
@@ -847,17 +845,17 @@ fun WoWForeverScreen(
     if (showIdentityResetConfirm) {
         AlertDialog(
             onDismissRequest = { showIdentityResetConfirm = false },
-            title = { Text(text = "Reset device identity?", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowError) },
-            text = { Text("Battle.net will see a new PC and you will sign in again.") },
+            title = { Text(text = "重置设备身份？", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowError) },
+            text = { Text("战网会将本机视为新电脑，需要重新登录。") },
             confirmButton = {
                 TextButton(onClick = {
                     identity = WowMachineIdentity.reset(context)
                     showIdentityResetConfirm = false
                     showIdentityDialog = false
-                }) { Text("Reset", color = WowError) }
+                }) { Text("重置", color = WowError) }
             },
             dismissButton = {
-                TextButton(onClick = { showIdentityResetConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showIdentityResetConfirm = false }) { Text("取消") }
             },
         )
     }
@@ -907,10 +905,10 @@ fun WoWForeverScreen(
     if (showStoragePermissionDialog) {
         AlertDialog(
             onDismissRequest = { showStoragePermissionDialog = false },
-            title = { Text(text = "Storage Permission Required", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            title = { Text(text = "需要存储权限", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
             text = {
                 Text(
-                    text = "Android requires 'All files access' for WoW Forever to read and update game files in this directory.\n\nPlease enable 'Allow access to manage all files' on the next screen.",
+                    text = "Android 需要「所有文件访问」权限，WoW Forever 才能读取和更新游戏文件。\n\n请在下一个界面开启「允许管理所有文件」。",
                     fontSize = 13.sp,
                     color = Color(0xFFE2E8F0),
                     lineHeight = 18.sp
@@ -925,12 +923,12 @@ fun WoWForeverScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = WowBronze, contentColor = Color.White),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("OPEN SETTINGS", fontWeight = FontWeight.Bold)
+                    Text("打开设置", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showStoragePermissionDialog = false }) {
-                    Text("CANCEL", color = WowMuted)
+                    Text("取消", color = WowMuted)
                 }
             },
             containerColor = Color(0xFF1B2838),
@@ -969,7 +967,7 @@ fun WoWForeverScreen(
                         }
                         if (isDownloadingAppUpdate) {
                             Text(
-                                text = "Downloading: ${(appUpdateProgress * 100).toInt()}%",
+                                text = "下载中：${(appUpdateProgress * 100).toInt()}%",
                                 fontSize = 12.sp,
                                 color = WowGold,
                                 fontWeight = FontWeight.Bold,
@@ -992,9 +990,9 @@ fun WoWForeverScreen(
                     ) {
                         Text(
                             text = when {
-                                isDownloadingAppUpdate -> "DOWNLOADING..."
-                                downloadedApk?.exists() == true -> "INSTALL NOW"
-                                else -> "UPDATE NOW"
+                                isDownloadingAppUpdate -> "下载中…"
+                                downloadedApk?.exists() == true -> "立即安装"
+                                else -> "立即更新"
                             },
                             fontWeight = FontWeight.Bold,
                         )
@@ -1179,7 +1177,7 @@ private fun InstallCard(isUpgrade: Boolean, gamePath: String, freeSpaceBytes: Lo
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Download, contentDescription = null, tint = WowGold, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                SectionTitle(if (isUpgrade) "WOW FOREVER HAS LAUNCHED" else "INSTALL WORLD OF WARCRAFT", WowGold)
+                SectionTitle(if (isUpgrade) "WoW Forever 已上线" else "安装魔兽世界", WowGold)
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -1357,12 +1355,12 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
         }
     }
 
-    onStatus("Configuring ${gpu.label} container...")
+    onStatus("正在配置容器（${gpu.label}）…")
     val containerManager = ContainerManager(context)
     val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), PerfMode.load(context), driver)
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
-        onStatus("Creating prefix environment (first boot)...")
+        onStatus("首次创建运行环境…")
         containerManager.createContainer(CONTAINER_ID, config)
     } else {
         container.loadData(config)
@@ -1655,7 +1653,7 @@ private fun installBundledComponents(context: Context, onStatus: (String) -> Uni
 
     val protonDir = File(ImageFs.getSharedProtonDir(context), PROTON_VERSION)
     if (!File(protonDir, "profile.json").exists() || !File(protonDir, "bin/wine").exists()) {
-        onStatus("Extracting Proton 11 ARM64EC (takes ~10s)...")
+        onStatus("解压 Proton 11 ARM64EC（约 10 秒）…")
         check(extractBundledWcp(context, "$PROTON_VERSION.wcp", protonDir)) { "Failed to extract Proton or graphics components." }
         File(protonDir, "bin").listFiles()?.forEach {
             it.setExecutable(true, false)
@@ -1665,7 +1663,7 @@ private fun installBundledComponents(context: Context, onStatus: (String) -> Uni
 
     val dxvkDir = File(ContentsManager.getContentTypeDir(context, ContentProfile.ContentType.CONTENT_TYPE_DXVK), DXVK_VERSION)
     if (!File(dxvkDir, "profile.json").exists()) {
-        onStatus("Extracting DXVK ARM64...")
+        onStatus("解压 DXVK ARM64…")
         if (!extractBundledWcp(context, "dxvk-$DXVK_VERSION.wcp", dxvkDir)) Timber.e("Failed to extract DXVK")
     }
 
@@ -1676,7 +1674,7 @@ private fun installBundledComponents(context: Context, onStatus: (String) -> Uni
 private fun installDriver(context: Context, driverName: String, assetZip: String, onStatus: (String) -> Unit) {
     val driverDir = File(context.filesDir, "contents/adrenotools/$driverName")
     if (File(driverDir, "meta.json").exists()) return
-    onStatus("Installing $driverName driver...")
+    onStatus("正在安装驱动 $driverName…")
     driverDir.mkdirs()
     if (!FileUtils.extractZipFromAssets(context, "bundled_components/$assetZip", driverDir)) {
         Timber.e("Error extracting driver $driverName from $assetZip")
