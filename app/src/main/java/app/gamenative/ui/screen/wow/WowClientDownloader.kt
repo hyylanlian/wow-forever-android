@@ -32,6 +32,8 @@ object WowClientDownloader {
     private const val EXCLUDED_ARCH = "x86_64"
     // Lists every region's build, like the plain-HTTP patch server on port 1119 it replaces.
     private const val PATCH_URL = "https://us.version.battle.net/v2/products/$TARGET_PRODUCT"
+    // NetEase runs China's realms, patch table and CDN on their own hosts; the global table has no cn row.
+    private const val CN_PATCH_URL = "https://cn.version.battlenet.com.cn/v2/products/$TARGET_PRODUCT"
     private const val DEFAULT_CDN_PATH = "tpr/wow"
     private val DEFAULT_CDN_HOSTS = listOf("level3.blizzard.com", "us.cdn.blizzard.com")
     private const val INDEX_DOWNLOAD_THREADS = 8
@@ -98,8 +100,12 @@ object WowClientDownloader {
         return remote.copy(localVersion = localVersion, isOutdated = isOutdated)
     }
 
+    internal fun patchUrl(region: String) =
+        if (region.equals("cn", ignoreCase = true)) CN_PATCH_URL else PATCH_URL
+
     private fun fetchRemote(region: String, localRow: Map<String, String>? = null): VersionCheckResult? {
-        val versions = runCatching { fetchText("$PATCH_URL/versions") }.getOrElse {
+        val patchServer = patchUrl(region)
+        val versions = runCatching { fetchText("$patchServer/versions") }.getOrElse {
             Timber.w(it, "fetchRemote: http call failed")
             return null
         } ?: run {
@@ -117,7 +123,7 @@ object WowClientDownloader {
                 return null
             }
 
-        val cdns = runCatching { fetchText("$PATCH_URL/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
+        val cdns = runCatching { fetchText("$patchServer/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
         val cdnsRow = regionRow(cdns, "Name", region)
 
         return VersionCheckResult(
@@ -322,12 +328,16 @@ object WowClientDownloader {
     // The region as the Battle.net app records it: as the Branch, and as the region tag (e.g. "US?") in Tags.
     private fun regionColumns(branch: String, tags: String?): Map<String, String> {
         val region = branch.uppercase(Locale.ROOT)
+        // The CN client is the Chinese build; enUS asks for assets the CN data doesn't carry.
+        val language = if (region == "CN") "zhCN" else "enUS"
         val regionTags = tags?.takeIf { it.isNotBlank() }?.replace(REGION_TAG, "$region?")
-            ?: listOf("speech", "text").joinToString(":") { "Windows $PLATFORM_ARCH $region? enUS $it?" }
+            ?.replace(EN_US_TAG, language)
+            ?: listOf("speech", "text").joinToString(":") { "Windows $PLATFORM_ARCH $region? $language $it?" }
         return mapOf("Branch" to branch, "Tags" to regionTags)
     }
 
     private val REGION_TAG = Regex("""\b[A-Z]{2}\?""")
+    private val EN_US_TAG = Regex("""\benUS\b""")
 
     // Best guess at the region the Battle.net app would record, for installs that have no beta row to copy it from.
     internal fun defaultBranch() = when (Locale.getDefault().country.uppercase(Locale.ROOT)) {

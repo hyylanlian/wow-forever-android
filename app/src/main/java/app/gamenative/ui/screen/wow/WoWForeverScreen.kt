@@ -1613,10 +1613,18 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
     if (!flavorInfo.exists()) {
         flavorInfo.writeText("Product Flavor!STRING:0\n$TARGET_PRODUCT\n")
     }
-    // Handheld defaults are only written on first boot so in-game changes stick, with three exceptions that are
-    // forced on every launch. gxApi: DXVK only works with D3D11, and a config copied from a Mac would otherwise
-    // select Metal. Resolutions match the container, which the launcher sizes: WoW's "auto" picks a 720p size
-    // because it sees a low-end Intel GPU via Wine, and saves that size on exit as if the player chose it.
+    // The CN client ships Chinese text and audio only; an enUS config asks for data the CN build doesn't carry.
+    val portal = region?.cdnRegion ?: portalOf(root)
+    val china = region == GameRegion.CN || (region == null && portal.equals("cn", ignoreCase = true))
+    val defaults = if (china) {
+        CONFIG_DEFAULTS + mapOf("textLocale" to "\"zhCN\"", "audioLocale" to "\"zhCN\"")
+    } else {
+        CONFIG_DEFAULTS
+    }
+    // Handheld defaults are only written on first boot so in-game changes stick, with the region's language and a
+    // few exceptions that are forced on every launch. gxApi: DXVK only works with D3D11, and a config copied from a
+    // Mac would otherwise select Metal. Resolutions match the container, which the launcher sizes: WoW's "auto" picks
+    // a 720p size because it sees a low-end Intel GPU via Wine, and saves that size on exit as if the player chose it.
     // The portal is the region picked in the launcher, or kept as is (filled from the install's region when
     // missing); without the Battle.net app to supply it, WoW otherwise stops at a region picker before login.
     val configWtf = File(root, CONFIG_WTF)
@@ -1626,20 +1634,26 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         configWtf.parentFile?.mkdirs()
         val betaOnly = listOf("SET portal ", "SET agentUID ", "SET CACHE-")
         val carried = betaConfigWtf.readLines().filterNot { line -> betaOnly.any { line.startsWith(it, ignoreCase = true) } }
-        configWtf.writeText((carried + "SET agentUID ${CONFIG_DEFAULTS.getValue("agentUID")}").joinToString("\n") + "\n")
+        configWtf.writeText((carried + "SET agentUID ${defaults.getValue("agentUID")}").joinToString("\n") + "\n")
     }
     if (!configWtf.exists()) {
         configWtf.parentFile?.mkdirs()
-        configWtf.writeText(CONFIG_DEFAULTS.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n")
+        configWtf.writeText(defaults.entries.joinToString("\n") { "SET ${it.key} ${it.value}" } + "\n")
     }
 
     val forced = mapOf(
-        "gxApi" to CONFIG_DEFAULTS.getValue("gxApi"),
+        "gxApi" to defaults.getValue("gxApi"),
         // agentUID must be re-written every launch: the game drops it when it saves Config.wtf,
         // and without it the SSO login can't tell which product's realm list to fetch.
-        "agentUID" to CONFIG_DEFAULTS.getValue("agentUID"),
-        "portal" to "\"${region?.cdnRegion ?: portalOf(root)}\"",
-    ) + RESOLUTION_KEYS.associateWith { "\"$screenSize\"" }
+        "agentUID" to defaults.getValue("agentUID"),
+        "portal" to "\"$portal\"",
+    ) + (if (china) {
+        // The CN build has no other locale's data, so the two language keys are forced with the portal. Switching
+        // back to an international region leaves them alone; in-game changes stick there.
+        mapOf("textLocale" to defaults.getValue("textLocale"), "audioLocale" to defaults.getValue("audioLocale"))
+    } else {
+        emptyMap()
+    }) + RESOLUTION_KEYS.associateWith { "\"$screenSize\"" }
     val forcedLines = forced.map { (key, value) -> "SET $key $value" }
     val original = configWtf.readLines()
     if (!original.containsAll(forcedLines)) {

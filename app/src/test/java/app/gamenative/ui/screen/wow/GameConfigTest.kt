@@ -54,4 +54,29 @@ class GameConfigTest {
             configWtf(root).readLines().filter { it.contains("Resolution ") },
         )
     }
+
+    private fun languages(root: File) =
+        configWtf(root).readLines().filter { it.contains("Locale ") }
+
+    @Test
+    fun cnRegion_newConfig_usesChineseLanguageAndPortal() {
+        val root = install("cn")
+        ensureGameConfig(root, "1920x1080", GameRegion.CN)
+        assertEquals(listOf("SET portal \"cn\""), portals(root))
+        assertEquals(listOf("SET textLocale \"zhCN\"", "SET audioLocale \"zhCN\""), languages(root))
+    }
+
+    @Test
+    fun cnInstallWithoutPickedRegion_newConfig_usesChineseLanguage() {
+        val root = install("cn")
+        ensureGameConfig(root, "1920x1080", null)
+        assertEquals(listOf("SET textLocale \"zhCN\"", "SET audioLocale \"zhCN\""), languages(root))
+    }
+
+    @Test
+    fun cnRegion_replacesAnEnglishConfig() {
+        val root = install("us", "SET textLocale \"enUS\"\nSET audioLocale \"enUS\"\n")
+        ensureGameConfig(root, "1920x1080", GameRegion.CN)
+        assertEquals(listOf("SET textLocale \"zhCN\"", "SET audioLocale \"zhCN\""), languages(root))
+    }
 }

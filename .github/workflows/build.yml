@@ -73,11 +73,20 @@ jobs:
             app/src/main/cpp/gamenative_dns_v4mapped.c -ldl
           sha256sum app/src/main/jniLibs/arm64-v8a/libgamenative_dns_v4mapped.so
 
+      - name: Unit tests
+        run: ./gradlew --no-daemon :app:testModernDebugUnitTest
+
       - name: Build
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon :app:assembleModernDebug
           cp app/build/outputs/apk/modern/debug/app-modern-debug.apk WoW-Forever.apk
+
+      - name: Checksum and signature
+        run: |
+          sha256sum WoW-Forever.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs WoW-Forever.apk
 
       - name: Publish release
         env:
@@ -85,6 +94,14 @@ jobs:
         run: |
           VERSION_CODE=$(( 248 + ${{ github.run_number }} ))
           TAG="build-${{ github.run_number }}-${{ github.run_attempt }}-vc$VERSION_CODE"
-          gh release create "$TAG" WoW-Forever.apk \
+          {
+            echo '校验：`sha256sum -c SHA256SUMS.txt`'
+            echo
+            echo "版本：2.4.5-ci.${{ github.run_number }}（versionCode $VERSION_CODE）"
+            echo
+            echo "签名：pinned debug keystore。本渠道构建之间可覆盖升级，不能覆盖使用其它签名的安装。"
+          } > notes.md
+          gh release create "$TAG" WoW-Forever.apk SHA256SUMS.txt \
             --title "WoW Forever（Battle.net 登录）build ${{ github.run_number }}" \
+            --notes-file notes.md \
             --prerelease

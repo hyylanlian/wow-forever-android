@@ -104,6 +104,35 @@ class WowClientDownloaderTest {
     }
 
     @Test
+    fun patchUrl_usesTheChinaPatchServerForCn() {
+        assertEquals("https://cn.version.battlenet.com.cn/v2/products/wowf", WowClientDownloader.patchUrl("CN"))
+        assertEquals("https://us.version.battle.net/v2/products/wowf", WowClientDownloader.patchUrl("us"))
+    }
+
+    @Test
+    fun upsertBuildInfo_usesChineseTagsForChina() {
+        val buildInfo = File(tempFolder.newFolder("fresh_cn"), ".build.info")
+
+        WowClientDownloader.upsertBuildInfo(buildInfo, TARGET.copy(region = "cn"))
+
+        val row = WowClientDownloader.readBuildInfo(buildInfo)!!
+        assertEquals("cn", row["Branch"])
+        assertEquals("Windows arm64 CN? zhCN speech?:Windows arm64 CN? zhCN text?", row["Tags"])
+    }
+
+    @Test
+    fun upsertBuildInfo_switchesAnExistingRowToChineseTags() {
+        val buildInfo = File(tempFolder.newFolder("switch_cn"), ".build.info")
+        WowClientDownloader.upsertBuildInfo(buildInfo, TARGET)
+
+        WowClientDownloader.upsertBuildInfo(buildInfo, TARGET.copy(region = "cn"))
+
+        val row = WowClientDownloader.readBuildInfo(buildInfo)!!
+        assertEquals("cn", row["Branch"])
+        assertEquals("Windows arm64 CN? zhCN speech?:Windows arm64 CN? zhCN text?", row["Tags"])
+    }
+
+    @Test
     fun upsertBuildInfo_usesTheTargetsRegionForANewRow() {
         val buildInfo = File(tempFolder.newFolder("fresh_kr"), ".build.info")
         buildInfo.writeText(BETA_BUILD_INFO)

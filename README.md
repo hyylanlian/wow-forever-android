@@ -34,7 +34,9 @@ Requirements:
 
 ### 1. Install the app
 
-Download `WoW-Forever.apk` from the [latest release](https://github.com/jaredgei/wow-forever-android/releases/latest) and install it on your device. The app's package name is `app.wowforever`, so it can sit alongside GameNative or Winlator.
+Download `WoW-Forever.apk` from this repository's [releases](https://github.com/hyylanlian/wow-forever-android/releases) and install it on your device. The app's package name is `app.wowforever`, so it can sit alongside GameNative or Winlator.
+
+Every build attaches `SHA256SUMS.txt`; verify a download with `sha256sum -c SHA256SUMS.txt`. Builds are signed with this repository's pinned debug key: they update each other in place, but can't replace an install signed with a different key (uninstall first when switching).
 
 ### 2. Install the game
 
@@ -83,7 +85,7 @@ Once your game files and Battle.net credentials are configured, the app automati
 
 - **Setup screen:** to access folder settings, forget credentials, check environment status, or view updates, hold **Start + Select + L2 + R2** (or tap the back button) during the loading splash to cancel boot and return to the setup screen.
 - The app creates a basic `WTF/Config.wtf` on first run and always sets `gxApi "D3D11"`, the renderer that works with DXVK.
-- **Region:** tap **Region** on the setup screen to choose Americas, Europe, Korea or Taiwan. The game logs straight into that region without showing its region picker. New installs default to a guess based on the phone's country. The game is also installed and updated to the build that region's realms run, which can differ between regions right after a patch.
+- **Region:** tap **Region** on the setup screen to choose Americas, Europe, Korea, Taiwan or China (国服). The game logs straight into that region without showing its region picker. New installs default to a guess based on the phone's country. The game is also installed and updated to the build that region's realms run, which can differ between regions right after a patch. China reads its build and CDN tables from NetEase's patch server (`cn.version.battlenet.com.cn`), tags the install `zhCN`, and forces Chinese text and audio in `Config.wtf`; Chinese realms also sign in through the browser with a NetEase account.
 - **Resolution:** tap **Resolution** on the setup screen to choose 720p, 900p or 1080p. Adreno 740 devices default to 1080p and Adreno 8xx devices to 720p, which runs much smoother there. The game's resolution is set from this on every launch and reshaped to fit non-16:9 screens.
 - **Add-ons:** tap **插件** on the setup screen to open the add-on manager. **搜索** lists add-ons from Wago that publish a WoW Forever build, with one-tap install; **已安装** checks those add-ons against Wago and updates them in place (individually or with **全部更新**). **从 ZIP 安装** still accepts a downloaded `.zip`. Installs go into `_forever_/Interface/AddOns`, replacing the old copy and keeping SavedVariables. Restart the game after installing or updating; folders copied there manually are listed as manual installs and are not update-checked.
 
