@@ -87,14 +87,14 @@ Reuse `AddonImporter` for installs; add a catalog and an update check.
 - **Add 1440p** for 8 Elite + cooler setups, and a one-line explanation per entry ("720p – smoother,
   1080p – sharper, needs cooling").
 
-## Order and effort
+## Order and status
 
-| # | Workstream | Effort | Risk | Start |
-| :-- | :--- | :--- | :--- | :--- |
-| 1 | Identity uniqueness + transparency | S–M | player accounts (ban risk if wrong) | now |
-| 2 | Driver catalog + download + picker | M | GPU regressions (mitigated by rollback) | after 1 |
-| 3 | Add-on manager | L | external APIs/CN network | after 2 (phased) |
-| 4 | Resolution doc + 1440p | S | none | anytime |
+| # | Workstream | Effort | Status |
+| :-- | :--- | :--- | :--- |
+| 1 | Identity uniqueness + transparency | S–M | ✅ done (`wow_identity.dat` Keystore blob, device fingerprint, Identity dialog + reset) |
+| 2a | Driver catalog + picker | M | ✅ done (per-family `DriverCatalog`, Driver dialog, persisted selection) |
+| 2b | Driver online download | M | ✅ pipeline done (`drivers.json` fetch + sha256 + unpack + Use); ⏳ a Drivers-CI that publishes new builds |
+| 3 | Add-on manager | L | ⏳ pending (wago.tools first, phased) |
+| 4 | Resolution doc + 1440p | S | ⏳ pending |
 
-The frame-rate experiments (`PERFORMANCE.md`) stay parked until these ship; the Max/Standard presets
-already delivered remain.
+Performance work (`PERFORMANCE.md`) stays parked behind these; the Max/Standard presets already ship.

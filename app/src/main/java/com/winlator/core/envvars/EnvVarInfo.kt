@@ -168,25 +168,6 @@ data class EnvVarInfo(
                 selectionType = EnvVarSelectionType.TOGGLE,
                 possibleValues = listOf("0", "1"),
             ),
-            "FEX_BNET_FORCE_X86" to EnvVarInfo(
-                identifier = "FEX_BNET_FORCE_X86",
-                selectionType = EnvVarSelectionType.TOGGLE,
-                possibleValues = listOf("0", "1"),
-            ),
-            "FEX_BNET_DETECT_LOG" to EnvVarInfo(
-                identifier = "FEX_BNET_DETECT_LOG",
-                selectionType = EnvVarSelectionType.TOGGLE,
-                possibleValues = listOf("0", "1"),
-            ),
-            "FEX_BNET_ID_NTQUERYSYSTEMINFORMATION" to EnvVarInfo(
-                identifier = "FEX_BNET_ID_NTQUERYSYSTEMINFORMATION",
-            ),
-            "FEX_BNET_ID_NTQUERYINFORMATIONPROCESS" to EnvVarInfo(
-                identifier = "FEX_BNET_ID_NTQUERYINFORMATIONPROCESS",
-            ),
-            "FEX_BNET_ID_NTQUERYINFORMATIONTHREAD" to EnvVarInfo(
-                identifier = "FEX_BNET_ID_NTQUERYINFORMATIONTHREAD",
-            ),
         )
         val KNOWN_ENV_VARS = mapOf(
             "ZINK_DESCRIPTORS" to EnvVarInfo(

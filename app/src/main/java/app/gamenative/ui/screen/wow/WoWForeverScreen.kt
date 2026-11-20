@@ -1291,13 +1291,13 @@ private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
-private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String, val family: String) {
+private data class GpuProfile(val screenSize: String, val label: String, val family: String) {
     companion object {
         fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
             // nolrz 对齐 WoWBox（同设备跑通）；去掉 noconform,sysmem —— sysmem 在 Adreno 8xx 上是闪屏常见源。
-            GpuProfile(ADRENO_8XX_DRIVER, "nolrz", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx", "a8xx")
+            GpuProfile("1280x720", "Adreno 8xx", "a8xx")
         } else {
-            GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740", "a7xx")
+            GpuProfile("1920x1080", "Adreno 740", "a7xx")
         }
 
         private fun isAdreno8xxDevice(context: Context): Boolean {
