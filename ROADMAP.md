@@ -36,7 +36,10 @@ wrong, and it blocks distribution.
 Landed: a per-family catalog (`DriverCatalog`) with the two bundled Turnip builds (a8xx →
 `Turnip-V32-RP6sched` recommended, a7xx → `Turnip-WoW-scheduler-test` recommended, plus the
 cross-choice), a **Driver** picker on the setup screen with notes, and the choice persisted and applied
-to the container (`graphicsDriverVersion` + `TU_DEBUG`) on the next launch. Remaining: the online part.
+to the container (`graphicsDriverVersion` + `TU_DEBUG`) on the next launch. The online half is in place
+too: the app fetches `drivers.json` (raw + CN mirrors), and the dialog downloads, sha256-checks and
+unpacks new drivers into `contents/adrenotools/<name>` with progress and retry. Remaining: a Drivers-CI
+that actually publishes new builds, and per-entry smoke tests before marking anything recommended.
 
 Model on DroidDeck: a curated per-GPU-family catalog plus CI-built weekly drivers, downloaded on
 demand and selectable per container.

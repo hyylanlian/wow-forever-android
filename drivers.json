@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "updatedAt": "2026-11-20",
+  "drivers": [
+    {
+      "name": "Turnip-V32-RP6sched",
+      "family": "a8xx",
+      "tuDebug": "nolrz",
+      "note": "Tuned for Adreno 8xx (RP6 scheduler build)",
+      "size": 3008404,
+      "sha256": "05434d3c102563a4577f514410cc713494bcf900f52c2b935391adf87a76b77a",
+      "urls": [
+        "https://gh-proxy.com/https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip",
+        "https://ghfast.top/https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip",
+        "https://raw.githubusercontent.com/arusiasotto/wow-forever-a840/main/driver/turnip-V32-RP6sched.zip"
+      ]
+    },
+    {
+      "name": "Turnip-WoW-scheduler-test",
+      "family": "a7xx",
+      "tuDebug": "noconform",
+      "note": "Stable default for Adreno 740",
+      "size": 3307824,
+      "sha256": "02384f692735515f73aad8a544bc640abe3f35fe18e8df2e667be712c442e54c",
+      "urls": [
+        "https://gh-proxy.com/https://github.com/jaredgei/wow-forever-android/releases/download/components-v1/turnip-wow-scheduler-test.zip",
+        "https://ghfast.top/https://github.com/jaredgei/wow-forever-android/releases/download/components-v1/turnip-wow-scheduler-test.zip",
+        "https://github.com/jaredgei/wow-forever-android/releases/download/components-v1/turnip-wow-scheduler-test.zip"
+      ]
+    }
+  ]
+}
