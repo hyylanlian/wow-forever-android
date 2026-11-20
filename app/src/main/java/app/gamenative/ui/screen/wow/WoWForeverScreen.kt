@@ -1527,13 +1527,14 @@ private enum class PerfMode(val pref: String) {
 
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity, perfMode: PerfMode, driver: DriverEntry): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    // Max (cooler): esync replaces wineserver round-trips, and DXVK caches dynamic resources.
-    // Standard keeps the validated defaults. PROTON_NO_NTSYNC stays in both: the ntsync driver hung sockets here.
-    val syncEnv = if (perfMode == PerfMode.MAX)
-        "WINEESYNC=1 DXVK_CONFIG=dxvk.cachedDynamicResources=c,dxvk.maxFrameLatency=1"
+    // Max (cooler): DXVK caches dynamic resources and shortens the frame queue. Esync stays off in both
+    // profiles: this Proton build hangs prefix initialization with WINEESYNC=1 (observed on-device).
+    // PROTON_NO_NTSYNC stays in both: the ntsync driver hung sockets here.
+    val dxvkEnv = if (perfMode == PerfMode.MAX)
+        "DXVK_CONFIG=dxvk.cachedDynamicResources=c,dxvk.maxFrameLatency=1"
     else
-        "WINEESYNC=0"
-    val envVars = "PROTON_NO_NTSYNC=1 WINEDEBUG=+winsock WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true $syncEnv MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${driver.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+        ""
+    val envVars = "PROTON_NO_NTSYNC=1 WINEESYNC=0 WINEDEBUG=+winsock WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true $dxvkEnv MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${driver.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")

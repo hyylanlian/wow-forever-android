@@ -15,12 +15,13 @@ A change that helps one often does nothing for the other. First measure which on
 
 | Preset | Intended for | Differences from the validated baseline |
 | :--- | :--- | :--- |
-| **Standard** | daily play, passive cooling | the validated defaults: `WINEESYNC=0` |
-| **Max (cooler)** | external cooler | `WINEESYNC=1` + `DXVK_CONFIG=dxvk.cachedDynamicResources=c,dxvk.maxFrameLatency=1` |
+| **Standard** | daily play, passive cooling | the validated defaults |
+| **Max (cooler)** | external cooler | `DXVK_CONFIG=dxvk.cachedDynamicResources=c,dxvk.maxFrameLatency=1` |
 
-`PROTON_NO_NTSYNC=1` stays in both — the ntsync driver hung the loopback socket on this device, while
-esync is the older userspace eventfd path and is unrelated. Resolution is independent of the preset:
-with a cooler, 900p/1080p no longer costs sustained FPS the way it does passively cooled.
+`WINEESYNC=0` and `PROTON_NO_NTSYNC=1` stay in both. Esync was tried in Max first and **hangs container
+startup on this Proton build** (prefix init never finished, standard took ~10 s), so it is off. The ntsync
+driver is off because it hung the loopback socket. Resolution is independent of the preset: with a
+cooler, 900p/1080p no longer costs sustained FPS the way it does passively cooled.
 
 ## Step 0 — measure and classify (one session)
 
@@ -48,7 +49,7 @@ record min/average FPS. Change exactly one variable per run.
 | `MESA_VK_WSI_PRESENT_MODE=mailbox` | Present the newest frame; no FIFO queue lag. |
 | 720p default on Adreno 8xx | Fill rate dominates; 1080p nearly doubles frame cost. |
 | `nolrz` in `TU_DEBUG` | Matches the config this game was validated with; see the LRZ experiment. |
-| Max preset: `WINEESYNC=1`, DXVK dynamic-resource cache | Esync replaces wineserver round-trips; cached dynamic resources cut map/copy stalls. |
+| Max preset: DXVK dynamic-resource cache + frame latency | Cached dynamic resources cut map/copy stalls; a shorter frame queue lowers latency. |
 
 Never set `WINEDEBUG=+seh`: slow exception dispatch trips the anti-cheat's `udf` + `cntvct_el0` check.
 
@@ -56,7 +57,8 @@ Never set `WINEDEBUG=+seh`: slow exception dispatch trips the anti-cheat's `udf`
 
 | # | Experiment | Mechanism (why it can win) | Risk | Revert |
 | :-- | :--- | :--- | :--- | :--- |
-| 1 | **Confirm Max beats Standard** | Validates esync + DXVK cache on this device with real numbers. If Max doesn't win, revert the preset's deltas one at a time. | none (toggle) | toggle |
+| 1 | **Confirm Max beats Standard** | Validates the DXVK deltas with real numbers. If Max doesn't win, revert them one at a time. | none (toggle) | toggle |
+| 1b | ~~`WINEESYNC=1`~~ | **Tested: hangs container startup on this Proton build.** Not available until the wine build changes. | blocked | n/a |
 | 2 | **LRZ: drop `nolrz`** | Adreno's low-resolution-Z rejects hidden pixels before shading. WoW is overdraw-heavy (foliage, alpha). If this Turnip build handles LRZ, dense-scene minimum FPS rises visibly. | LRZ bugs on Turnip are classic: flickering geometry or missing particles. Test visually, not just FPS. | 1-line env |
 | 3 | **Turnip variant A/B** | `Turnip-V32-RP6sched` (current, tuned for gen8 by arusiasotto) vs `Turnip-WoW-scheduler-test` (the Adreno 740 default). Different scheduler/UBWC handling can be worth several frames. | Rendering regressions | switch the driver asset |
 | 4 | **In-game render scale + sliders** | Render scale 0.8 with the game's own sharpening (or FSR if offered) keeps the UI sharp while cutting shading cost; shadows and liquid detail are the cheapest wins on Adreno, view distance next. | Visual | in-game |
