@@ -18,26 +18,18 @@ implemented yet; it is the plan to review.
   prefix. Uniqueness relies on `SecureRandom` alone; a backup restored to another device would copy
   the identity, which is the fraud-check hazard to close.
 
-## 1. Device identity: uniqueness and anti-cheat safety (S–M effort, do first)
+## 1. Device identity: uniqueness and anti-cheat safety (S–M effort, do first) — implemented
 
-Why first: it is the one item that can hurt players (Battle.net fraud checks, `BLZ51914400`) if done
+Landed: the identity is derived from `ANDROID_ID` + 256 bits of `SecureRandom`, stored Keystore-encrypted
+(`wow_identity.dat`), and verified against a device fingerprint on every load. A backup restored onto a
+different phone regenerates instead of sharing; the setup screen has an **Identity** row showing the
+computer name with an explanation and a reset action. Legacy plaintext identities are adopted once on
+upgrade (keeps the same PC) and the old file is deleted. Remaining known window: a backup made *before*
+this change restored onto a fresh device adopts the legacy identity — strictly narrower than before, and
+closed on the next launch after any post-upgrade backup.
+
+Why it was first: it is the one item that can hurt players (Battle.net fraud checks, `BLZ51914400`) if done
 wrong, and it blocks distribution.
-
-- **Entropy**: derive the identity from `ANDROID_ID` (per app-signing, per device) + 256 bits of
-  `SecureRandom`, hashed; store Keystore-encrypted, not a plaintext properties file.
-- **Uniqueness**: 256-bit random means collision is effectively impossible, and there is never a
-  shared constant baked into the APK. Computer name / volume serial / install date all derive from
-  the same secret, so two devices can never produce the same identity.
-- **Restore safety**: on load, verify the stored identity's fingerprint against the current device
-  (`ANDROID_ID` + SoC + screen); a backup restored onto a different phone regenerates a fresh identity
-  instead of sharing one. A restore onto the same phone keeps the old one.
-- **Reinstall**: generates a new identity — acceptable and safer; Battle.net just sees a new PC.
-- **Anti-cheat boundaries** (document in-app): we only fill fields Wine leaves blank on ARM64 (CPU
-  vendor/name), matching the real device. No per-launch randomization, no synthetic MAC, no spoofing
-  beyond the client's own fingerprinting needs — randomization trips fraud detection and would get
-  accounts banned; per-launch randomization is explicitly out of scope.
-- **Transparency**: an "identity" info row on the setup screen (show current computer name, explain
-  one-per-install), plus a hidden "reset identity" for support.
 
 ## 2. Driver adaptation, selection and online update (M effort)
 

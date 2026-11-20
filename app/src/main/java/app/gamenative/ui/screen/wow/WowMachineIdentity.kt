@@ -1,8 +1,15 @@
 package app.gamenative.ui.screen.wow
 
 import android.content.Context
+import android.os.Build
+import android.provider.Settings
+import android.util.Base64
+import app.gamenative.Crypto
 import com.winlator.core.WineRegistryEditor
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Properties
 import java.util.UUID
@@ -63,6 +70,9 @@ internal data class WowMachineIdentity(
         const val HOSTNAME_ENV = "GAMENATIVE_HOSTNAME"
 
         private const val FILE_NAME = "wow_identity.properties"
+        private const val SECRET_FILE = "wow_identity.dat"
+        private const val FORMAT_VERSION = "v2"
+        private const val FINGERPRINT_KEY = "fingerprint"
         private val CURRENT_VERSION_KEYS = listOf(
             "Software\\Microsoft\\Windows NT\\CurrentVersion",
             "Software\\Wow6432Node\\Microsoft\\Windows NT\\CurrentVersion",
@@ -82,19 +92,71 @@ internal data class WowMachineIdentity(
         @Synchronized
         fun load(context: Context): WowMachineIdentity = cached ?: read(context).also { cached = it }
 
-        private fun read(context: Context): WowMachineIdentity {
-            val file = File(context.filesDir, FILE_NAME)
-            val props = Properties()
-            runCatching { file.inputStream().use(props::load) }
-            fromProperties(props)?.let { return it }
+        /** Generates a fresh identity. Battle.net then sees this install as a new PC. */
+        @Synchronized
+        fun reset(context: Context): WowMachineIdentity {
+            cached = null
+            runCatching { File(context.filesDir, SECRET_FILE).delete() }
+            runCatching { File(context.filesDir, FILE_NAME).delete() }
+            return load(context)
+        }
 
+        private fun read(context: Context): WowMachineIdentity {
+            val file = File(context.filesDir, SECRET_FILE)
+            decryptFrom(file)?.let { (identity, fingerprint) ->
+                if (fingerprint == deviceFingerprint(context)) return identity
+                // A backup restored onto a different phone must not share this PC identity.
+                Timber.w("Machine identity belongs to another device; regenerating")
+                file.delete()
+            }
+            // One-time migration of the legacy plaintext identity so app updates keep the same PC.
+            val legacy = File(context.filesDir, FILE_NAME)
+            runCatching {
+                val props = Properties()
+                legacy.inputStream().use(props::load)
+                fromProperties(props)
+            }.getOrNull()?.let { identity ->
+                saveEncrypted(context, file, identity)
+                legacy.delete()
+                return identity
+            }
             val identity = generate(SecureRandom())
-            props.clear()
-            props.putAll(identity.toProperties())
-            runCatching { file.outputStream().use { props.store(it, null) } }
-                .onFailure { Timber.e(it, "Couldn't save the machine identity") }
+            saveEncrypted(context, file, identity)
             return identity
         }
+
+        /** Stable across app updates (same signing key), different per device and per signing key. */
+        private fun deviceFingerprint(context: Context): String {
+            val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "none"
+            val soc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Build.SOC_MODEL ?: "" else ""
+            return sha256Hex("$FORMAT_VERSION|$androidId|$soc|${Build.HARDWARE}|${Build.MODEL}")
+        }
+
+        private fun saveEncrypted(context: Context, file: File, identity: WowMachineIdentity) {
+            val props = Properties()
+            props.setProperty("version", FORMAT_VERSION)
+            props.setProperty(FINGERPRINT_KEY, deviceFingerprint(context))
+            props.putAll(identity.toProperties())
+            val text = ByteArrayOutputStream().use { output ->
+                props.store(output, null)
+                output.toByteArray()
+            }
+            val sealed = Base64.encodeToString(Crypto.encrypt(text), Base64.NO_WRAP)
+            runCatching { file.writeText(sealed) }
+                .onFailure { Timber.e(it, "Couldn't save the machine identity") }
+        }
+
+        private fun decryptFrom(file: File): Pair<WowMachineIdentity, String>? = runCatching {
+            val sealed = Base64.decode(file.readText().trim(), Base64.NO_WRAP)
+            val props = Properties()
+            ByteArrayInputStream(Crypto.decrypt(sealed)).use(props::load)
+            check(props.getProperty("version") == FORMAT_VERSION)
+            val identity = fromProperties(props) ?: error("malformed identity")
+            identity to (props.getProperty(FINGERPRINT_KEY) ?: "")
+        }.getOrNull()
+
+        private fun sha256Hex(value: String): String =
+            MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
         internal fun generate(random: java.util.Random): WowMachineIdentity {
             // A random (version 4) UUID, like Windows generates.

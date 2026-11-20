@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
@@ -106,6 +107,9 @@ fun WoWForeverScreen(
     var launchJob by remember { mutableStateOf<Job?>(null) }
     var browserLogin by remember { mutableStateOf(BattleNetBrowserLogin.enabled(context)) }
     var perfMode by remember { mutableStateOf(PerfMode.load(context)) }
+    var identity by remember { mutableStateOf(WowMachineIdentity.load(context)) }
+    var showIdentityDialog by remember { mutableStateOf(false) }
+    var showIdentityResetConfirm by remember { mutableStateOf(false) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
@@ -709,12 +713,52 @@ fun WoWForeverScreen(
                             perfMode = if (perfMode == PerfMode.MAX) PerfMode.STANDARD else PerfMode.MAX
                             PerfMode.save(context, perfMode)
                         }
+                        LinkButton("Identity", Icons.Default.Info) { showIdentityDialog = true }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+
+    if (showIdentityDialog) {
+        AlertDialog(
+            onDismissRequest = { showIdentityDialog = false },
+            title = { Text(text = "Device identity", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            text = {
+                Text(
+                    text = "Battle.net sees this install as the PC \"${identity.computerName}\". The identity is " +
+                        "generated once per install, stored encrypted on this device, and re-generated automatically " +
+                        "if app data is restored onto a different phone, so two devices never share one. Resetting " +
+                        "makes Battle.net treat this as a new PC and requires signing in again."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showIdentityDialog = false }) { Text("Close") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showIdentityResetConfirm = true }) { Text("Reset", color = WowError) }
+            },
+        )
+    }
+
+    if (showIdentityResetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showIdentityResetConfirm = false },
+            title = { Text(text = "Reset device identity?", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowError) },
+            text = { Text("Battle.net will see a new PC and you will sign in again.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    identity = WowMachineIdentity.reset(context)
+                    showIdentityResetConfirm = false
+                    showIdentityDialog = false
+                }) { Text("Reset", color = WowError) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showIdentityResetConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showUpgradeDialog) {
