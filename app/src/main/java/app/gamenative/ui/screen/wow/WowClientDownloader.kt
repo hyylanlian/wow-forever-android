@@ -55,14 +55,21 @@ object WowClientDownloader {
             .build()
     }
 
+    /** A client build the launcher can reinstall, with the two CDN keys that name it. */
+    internal data class KnownBuild(val version: String, val buildConfig: String, val cdnConfig: String)
+
     /**
-     * Builds the launcher can reinstall when a freshly published client cannot get past the login screen.
-     * Keys are the build config and CDN config the CDN keeps for that build; they never change, and the CN
-     * CDN still serves them (verified 2026-11-21). Taken from wago.tools' public build history.
+     * Recent builds, newest first, from wago.tools' public build history. A freshly published build can be refused
+     * at the login screen for a while — 1.60.1.71037 was on 2026-11-21, while 1.60.1.70959 logged in with the same
+     * credential — so the launcher lets the player pick an earlier build. The CDN keeps serving them.
      */
-    private val KNOWN_GOOD_BUILDS = mapOf(
-        // 1.60.1.71037 is refused at the login screen (51900243) on this setup; 1.60.1.70959 logs in.
-        "1.60.1.70959" to ("ad887adcf63b8746155dd40e1930b80f" to "96bea67d7d87c3dacb917be74097eaa6"),
+    internal val KNOWN_BUILDS = listOf(
+        KnownBuild("1.60.1.70959", "ad887adcf63b8746155dd40e1930b80f", "96bea67d7d87c3dacb917be74097eaa6"),
+        KnownBuild("1.60.1.70938", "3627b099867bfde3e37a17cf44f69cdc", "3363ac656da5f261cdc675ab28b2744c"),
+        KnownBuild("1.60.1.70888", "0597e74b01a3f779d849ffe9b3270196", "8ecf609471cb2ea16667be9cc2b7a555"),
+        KnownBuild("1.60.1.70862", "5ada954223f7c409ea172361f5c9e565", "55a5dda25b026279080cad451b6cbf73"),
+        KnownBuild("1.60.1.70840", "6ca8f0e6eae877c8346388d55601a1bc", "6aee492112bf17a47b7aae8e30447df2"),
+        KnownBuild("1.60.1.70790", "9006ba6948388dd0d4a0578e64b8a92e", "b19054257ba969b8b65cbc3cf5aa1556"),
     )
 
     data class VersionCheckResult(
@@ -179,15 +186,13 @@ object WowClientDownloader {
         runCatching { legacy.copyRecursively(residency) }.onFailure { Timber.w(it, "Couldn't copy the beta residency data") }
     }
 
-    internal fun knownGoodVersion(version: String): Boolean = version in KNOWN_GOOD_BUILDS
-
     /**
      * The update that reinstalls a known-good build with this install's CDN settings, or null when the build is
      * not one of them or already installed. Kept apart from [checkVersion] so a rollback never depends on the
      * patch server, which only ever advertises the newest build.
      */
     internal fun rollbackTarget(buildInfo: File, version: String): VersionCheckResult? {
-        val keys = KNOWN_GOOD_BUILDS[version] ?: return null
+        val known = KNOWN_BUILDS.firstOrNull { it.version == version } ?: return null
         val row = runCatching { activeBuild(buildInfo) }.getOrNull() ?: return null
         val localVersion = row["Version"] ?: return null
         if (localVersion == version) return null
@@ -195,8 +200,8 @@ object WowClientDownloader {
             localVersion = localVersion,
             remoteVersion = version,
             isOutdated = false,
-            remoteBuildConfig = keys.first,
-            remoteCdnConfig = keys.second,
+            remoteBuildConfig = known.buildConfig,
+            remoteCdnConfig = known.cdnConfig,
             remoteCdnHosts = splitHosts(row["CDN Hosts"].orEmpty()),
             remoteCdnPath = row["CDN Path"]?.takeIf { it.isNotBlank() } ?: DEFAULT_CDN_PATH,
             remoteCdnServers = splitHosts(row["CDN Servers"].orEmpty()),

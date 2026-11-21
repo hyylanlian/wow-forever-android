@@ -124,7 +124,7 @@ fun WoWForeverScreen(
     var showStoragePermissionDialog by remember { mutableStateOf(false) }
     var versionStatus by remember { mutableStateOf<WowClientDownloader.VersionCheckResult?>(null) }
     var pinnedVersion by remember { mutableStateOf(BuildPin.load(context)) }
-    var showRollbackConfirm by remember { mutableStateOf(false) }
+    var showVersionPicker by remember { mutableStateOf(false) }
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
@@ -396,6 +396,9 @@ fun WoWForeverScreen(
                     }
                 }
                 isUpdating = false
+                // Keep the chosen build so the launcher stops advertising the newer one.
+                pinnedVersion = version
+                BuildPin.save(context, version)
                 SnackbarManager.show("已回退到 $version")
                 checkFiles()
                 checkVersionStatus()
@@ -789,10 +792,9 @@ fun WoWForeverScreen(
                             }
                             checkVersionStatus()
                         }
-                        val fallback = pinnedVersion?.takeIf { WowClientDownloader.knownGoodVersion(it) }
-                        if (fallback != null && installedVersion() != fallback) {
-                            LinkButton("回退到 $fallback", Icons.Default.Restore, enabled = !isLaunching && !isUpdating) {
-                                showRollbackConfirm = true
+                        if (WowClientDownloader.KNOWN_BUILDS.any { it.version != installedVersion() }) {
+                            LinkButton("版本回退", Icons.Default.Restore, enabled = !isLaunching && !isUpdating) {
+                                showVersionPicker = true
                             }
                         }
                         LinkButton(
@@ -881,25 +883,40 @@ fun WoWForeverScreen(
         )
     }
 
-    if (showRollbackConfirm && pinnedVersion != null) {
+    if (showVersionPicker) {
+        val installed = installedVersion()
         AlertDialog(
-            onDismissRequest = { showRollbackConfirm = false },
-            title = { Text(text = "回退到 $pinnedVersion", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            onDismissRequest = { showVersionPicker = false },
+            title = { Text(text = "选择要回退到的版本", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
             text = {
-                Text(
-                    text = "会重新下载该版本的 ARM64 客户端并切回它的构建配置；游戏数据不会删除，缺的部分由客户端自己流式补。\n\n" +
-                        "之后想回到新版本，解除锁定再点更新即可。",
-                    fontSize = 13.sp, color = Color(0xFFE2E8F0), lineHeight = 18.sp,
-                )
+                Column {
+                    Text(
+                        text = "会重新下载该版本的 ARM64 客户端并切回它的构建配置；游戏数据不会删除，缺的部分由客户端流式补。" +
+                            "回退后自动锁定该版本，想回新版本就解除锁定再点更新。",
+                        fontSize = 13.sp, color = Color(0xFFE2E8F0), lineHeight = 18.sp,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    WowClientDownloader.KNOWN_BUILDS.forEach { build ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (build.version == installed) "${build.version}（当前）" else build.version,
+                                modifier = Modifier.weight(1f),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (build.version == installed) WowMuted else Color(0xFFE2E8F0),
+                            )
+                            TextButton(
+                                onClick = {
+                                    showVersionPicker = false
+                                    performRollback(build.version)
+                                },
+                                enabled = build.version != installed && !isUpdating && !isLaunching,
+                            ) { Text("回退", color = if (build.version == installed) WowMuted else WowGold) }
+                        }
+                    }
+                }
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    val version = pinnedVersion
-                    showRollbackConfirm = false
-                    if (version != null) performRollback(version)
-                }) { Text("回退", color = WowGold) }
-            },
-            dismissButton = { TextButton(onClick = { showRollbackConfirm = false }) { Text("取消") } },
+            confirmButton = { TextButton(onClick = { showVersionPicker = false }) { Text("关闭", color = WowGold) } },
             containerColor = Color(0xFF1B2838),
             shape = RoundedCornerShape(16.dp),
         )

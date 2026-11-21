@@ -155,7 +155,7 @@ shows that log so a locked-down launch is never silent.
 | `stage 8 failed` | Android side aborted before sending the credential | Read the dialog message: it names the failing step |
 | `Browser sign-in could not start the game (…)` | Unexpected exception on the Android side | The parenthesised class identifies the layer; `JSONException` means a malformed device frame |
 | `unsupported sign-in address` | Redirect outside the allowlist | Add the host to `BrowserAuthUrl` |
-| `51900243` on the login screen right after the automatic sign-in, client `1.60.1.71037` | That client build is refused at login; the same token and account log in on `1.60.1.70959` | `锁定版本` keeps the working build and stops the update prompt; if the install already moved on, `回退到 1.60.1.70959` reinstalls it |
+| `51900243` on the login screen right after the automatic sign-in, client `1.60.1.71037` | That client build is refused at login; the same token and account log in on `1.60.1.70959` | `锁定版本` keeps the working build and stops the update prompt; if the install already moved on, `版本回退` reinstalls `1.60.1.70959` |
 
 ## Diagnostics
 
@@ -184,11 +184,12 @@ itself is never read.
 The patch server only advertises the newest build, so a build that Battle.net starts refusing at the
 login screen (as `1.60.1.71037` was on 2026-11-21) would otherwise be reinstalled on every update.
 `锁定版本` stores the installed version in the `wow_forever` preferences and treats it as current, so
-the update prompt, the update card and the auto-launch gate leave it alone. `回退到 <version>` rebuilds
-the install from that build's config keys (`WowClientDownloader.KNOWN_GOOD_BUILDS`, taken from
-wago.tools' build history and still served by the CDN): it re-downloads the client binaries, adds that
-build's indexes and writes its keys into `.build.info`, while the game data stays on disk and is
-streamed as before. Unlocking and updating returns to the newest build.
+the update prompt, the update card and the auto-launch gate leave it alone. `版本回退` lists
+`WowClientDownloader.KNOWN_BUILDS` (recent builds with their config keys, taken from wago.tools' build
+history and still served by the CDN) and rebuilds the install from the chosen one: it re-downloads the
+client binaries, adds that build's indexes and writes its keys into `.build.info`, while the game data
+stays on disk and is streamed as before. A rollback pins its build automatically; unlocking and updating
+returns to the newest build.
 
 ## Security notes
 

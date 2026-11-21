@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
@@ -291,6 +292,19 @@ class WowClientDownloaderTest {
         assertEquals("", target?.region)
         assertFalse(target!!.isOutdated)
         assertEquals("1.60.1.71037", target.localVersion)
+    }
+
+    @Test
+    fun knownBuilds_areListedNewestFirstWithTheirKeys() {
+        val builds = WowClientDownloader.KNOWN_BUILDS
+        assertTrue(builds.size >= 2)
+        val numbers = builds.map { it.version.substringAfterLast('.').toInt() }
+        assertEquals(numbers.sortedDescending(), numbers)
+        builds.forEach {
+            assertEquals(32, it.buildConfig.length)
+            assertEquals(32, it.cdnConfig.length)
+            assertTrue(it.version.startsWith("1.60.1."))
+        }
     }
 
     @Test
