@@ -1,6 +1,7 @@
 package app.gamenative.ui.screen.wow
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -268,6 +269,43 @@ class WowClientDownloaderTest {
     fun readBuildInfo_returnsNullOnMissingFile() {
         val nonExistent = File(tempFolder.root, "does_not_exist")
         assertNull(WowClientDownloader.readBuildInfo(nonExistent))
+    }
+
+    @Test
+    fun rollbackTarget_reinstallsTheKnownBuildWithTheInstallsCdnSettings() {
+        val root = tempFolder.newFolder("rollback")
+        val buildInfo = File(root, ".build.info")
+        buildInfo.writeText(
+            "Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|CDN Key!HEX:16|Install Key!HEX:16|IM Size!DEC:4|CDN Path!STRING:0|CDN Hosts!STRING:0|CDN Servers!STRING:0|Tags!STRING:0|Version!STRING:0|Product!STRING:0\n" +
+                "cn|1|0acab1e6aa41b46165d2ca66853b417b|36baf7539c6f6c557bfe541f165a77b0|||tpr/wow|blzdist-wow.necdn.leihuo.netease.com|http://blzdist-wow.necdn.leihuo.netease.com/?maxhosts=6 https://blzdist-wow.necdn.leihuo.netease.com/?maxhosts=4&fallback=1|Windows arm64 CN? enUS speech?|1.60.1.71037|wowf\n"
+        )
+
+        val target = WowClientDownloader.rollbackTarget(buildInfo, "1.60.1.70959")
+        assertNotNull(target)
+        assertEquals("1.60.1.70959", target?.remoteVersion)
+        assertEquals("ad887adcf63b8746155dd40e1930b80f", target?.remoteBuildConfig)
+        assertEquals("96bea67d7d87c3dacb917be74097eaa6", target?.remoteCdnConfig)
+        assertEquals(listOf("blzdist-wow.necdn.leihuo.netease.com"), target?.remoteCdnHosts)
+        assertEquals("tpr/wow", target?.remoteCdnPath)
+        // The install's own tags and branch stay; only the build moves.
+        assertEquals("", target?.region)
+        assertFalse(target!!.isOutdated)
+        assertEquals("1.60.1.71037", target.localVersion)
+    }
+
+    @Test
+    fun rollbackTarget_refusesUnknownBuildsAndTheInstalledOne() {
+        val root = tempFolder.newFolder("rollback_refused")
+        val buildInfo = File(root, ".build.info")
+        buildInfo.writeText(
+            "Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|CDN Key!HEX:16|Install Key!HEX:16|IM Size!DEC:4|CDN Path!STRING:0|CDN Hosts!STRING:0|CDN Servers!STRING:0|Tags!STRING:0|Version!STRING:0|Product!STRING:0\n" +
+                "cn|1|0acab1e6aa41b46165d2ca66853b417b|36baf7539c6f6c557bfe541f165a77b0|||tpr/wow|blzdist-wow.necdn.leihuo.netease.com||?|1.60.1.70959|wowf\n"
+        )
+
+        assertNull(WowClientDownloader.rollbackTarget(buildInfo, "1.60.1.71037"))
+        // Already on it: no download, and the launcher must not "update" to the same build.
+        assertNull(WowClientDownloader.rollbackTarget(buildInfo, "1.60.1.70959"))
+        assertNull(WowClientDownloader.rollbackTarget(File(root, "missing"), "1.60.1.70959"))
     }
 }
 

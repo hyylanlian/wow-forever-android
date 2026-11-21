@@ -55,6 +55,16 @@ object WowClientDownloader {
             .build()
     }
 
+    /**
+     * Builds the launcher can reinstall when a freshly published client cannot get past the login screen.
+     * Keys are the build config and CDN config the CDN keeps for that build; they never change, and the CN
+     * CDN still serves them (verified 2026-11-21). Taken from wago.tools' public build history.
+     */
+    private val KNOWN_GOOD_BUILDS = mapOf(
+        // 1.60.1.71037 is refused at the login screen (51900243) on this setup; 1.60.1.70959 logs in.
+        "1.60.1.70959" to ("ad887adcf63b8746155dd40e1930b80f" to "96bea67d7d87c3dacb917be74097eaa6"),
+    )
+
     data class VersionCheckResult(
         val localVersion: String,
         val remoteVersion: String,
@@ -167,6 +177,39 @@ object WowClientDownloader {
         val legacy = File(gameRoot, "Data/$LEGACY_PRODUCT")
         if (residency.exists() || !legacy.isDirectory) return
         runCatching { legacy.copyRecursively(residency) }.onFailure { Timber.w(it, "Couldn't copy the beta residency data") }
+    }
+
+    internal fun knownGoodVersion(version: String): Boolean = version in KNOWN_GOOD_BUILDS
+
+    /**
+     * The update that reinstalls a known-good build with this install's CDN settings, or null when the build is
+     * not one of them or already installed. Kept apart from [checkVersion] so a rollback never depends on the
+     * patch server, which only ever advertises the newest build.
+     */
+    internal fun rollbackTarget(buildInfo: File, version: String): VersionCheckResult? {
+        val keys = KNOWN_GOOD_BUILDS[version] ?: return null
+        val row = runCatching { activeBuild(buildInfo) }.getOrNull() ?: return null
+        val localVersion = row["Version"] ?: return null
+        if (localVersion == version) return null
+        return VersionCheckResult(
+            localVersion = localVersion,
+            remoteVersion = version,
+            isOutdated = false,
+            remoteBuildConfig = keys.first,
+            remoteCdnConfig = keys.second,
+            remoteCdnHosts = splitHosts(row["CDN Hosts"].orEmpty()),
+            remoteCdnPath = row["CDN Path"]?.takeIf { it.isNotBlank() } ?: DEFAULT_CDN_PATH,
+            remoteCdnServers = splitHosts(row["CDN Servers"].orEmpty()),
+            region = "",
+        )
+    }
+
+    /** Installs a known-good build's client binaries and build info in place of the current one. */
+    fun installKnownBuild(gameRoot: File, version: String, onStatus: (String) -> Unit) {
+        val target = rollbackTarget(File(gameRoot, BUILD_INFO), version)
+            ?: throw IOException("No known-good build $version to fall back to")
+        onStatus("回退到 ${target.remoteVersion}…")
+        updateGame(gameRoot, target, onStatus)
     }
 
     fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit) {

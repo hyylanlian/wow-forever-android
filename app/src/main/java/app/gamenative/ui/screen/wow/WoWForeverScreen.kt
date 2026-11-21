@@ -22,10 +22,12 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -121,6 +123,8 @@ fun WoWForeverScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showStoragePermissionDialog by remember { mutableStateOf(false) }
     var versionStatus by remember { mutableStateOf<WowClientDownloader.VersionCheckResult?>(null) }
+    var pinnedVersion by remember { mutableStateOf(BuildPin.load(context)) }
+    var showRollbackConfirm by remember { mutableStateOf(false) }
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
@@ -185,14 +189,48 @@ fun WoWForeverScreen(
         isCheckingVersion = true
         val checked = region
         val status = withContext(Dispatchers.IO) { WowClientDownloader.checkVersion(File(gamePath), checked.cdnRegion) }
-        // A check for a region the player has since switched away from is stale.
-        if (checked == region) versionStatus = status
+        // A check for a region the player has since switched away from is stale. A pinned build keeps its install:
+        // a newer build is not advertised, and the auto-launch gate does not hold the game back for it.
+        if (checked == region) {
+            versionStatus = status?.let { result ->
+                if (pinnedVersion != null && result.localVersion == pinnedVersion) result.copy(isOutdated = false) else result
+            }
+        }
         isCheckingVersion = false
     }
 
     fun checkVersionStatus() {
         if (!File(gamePath, BUILD_INFO).exists()) return
         scope.launch { fetchVersionStatus() }
+    }
+
+    /** The version installed on disk, which is what the client that launches is. */
+    fun installedVersion(): String? = versionStatus?.localVersion
+        ?: WowClientDownloader.readBuildInfo(File(gamePath, BUILD_INFO))?.get("Version")
+
+    /** Reinstalls the pinned build's client, for an install that has moved past it. */
+    fun performRollback(version: String) {
+        if (isUpdating || isLaunching) return
+        isUpdating = true
+        errorMessage = null
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    WowClientDownloader.installKnownBuild(File(gamePath), version) { msg ->
+                        scope.launch(Dispatchers.Main) { updateStatusText = msg }
+                    }
+                }
+                isUpdating = false
+                SnackbarManager.show("已回退到 $version")
+                checkFiles()
+                checkVersionStatus()
+            } catch (e: Exception) {
+                Timber.e(e, "Rollback to $version failed")
+                if (e.isPermissionDenied()) denyStorageAccess()
+                errorMessage = "回退失败: ${e.message}"
+                isUpdating = false
+            }
+        }
     }
 
     fun checkFiles(): Boolean {
@@ -728,6 +766,35 @@ fun WoWForeverScreen(
                             BattleNetBrowserLogin.setEnabled(context, true)
                             SnackbarManager.show("已清除战网登录状态，并已开启浏览器登录。点击“开始游戏”后需要重新登录。")
                         }
+                        // A client build can reach Battle.net but still be refused at the login screen (1.60.1.71037
+                        // was); a pinned build keeps the launcher from advertising it and the auto-launch from waiting.
+                        LinkButton(
+                            text = pinnedVersion?.let { "锁定版本：$it" } ?: "锁定版本：关",
+                            icon = Icons.Default.Lock,
+                            enabled = !isLaunching && !isUpdating,
+                        ) {
+                            if (pinnedVersion != null) {
+                                pinnedVersion = null
+                                BuildPin.save(context, null)
+                                SnackbarManager.show("已解除版本锁定，会重新提示更新")
+                            } else {
+                                val version = installedVersion()
+                                if (version == null) {
+                                    SnackbarManager.show("还没读到已安装的客户端版本")
+                                } else {
+                                    pinnedVersion = version
+                                    BuildPin.save(context, version)
+                                    SnackbarManager.show("已锁定客户端版本 $version，不再提示更新")
+                                }
+                            }
+                            checkVersionStatus()
+                        }
+                        val fallback = pinnedVersion?.takeIf { WowClientDownloader.knownGoodVersion(it) }
+                        if (fallback != null && installedVersion() != fallback) {
+                            LinkButton("回退到 $fallback", Icons.Default.Restore, enabled = !isLaunching && !isUpdating) {
+                                showRollbackConfirm = true
+                            }
+                        }
                         LinkButton(
                             text = if (perfMode == PerfMode.MAX) "性能：满血（散热器）" else "性能：标准",
                             icon = Icons.Default.Speed,
@@ -811,6 +878,30 @@ fun WoWForeverScreen(
             dismissButton = {
                 TextButton(onClick = { showIdentityResetConfirm = false }) { Text("取消") }
             },
+        )
+    }
+
+    if (showRollbackConfirm && pinnedVersion != null) {
+        AlertDialog(
+            onDismissRequest = { showRollbackConfirm = false },
+            title = { Text(text = "回退到 $pinnedVersion", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
+            text = {
+                Text(
+                    text = "会重新下载该版本的 ARM64 客户端并切回它的构建配置；游戏数据不会删除，缺的部分由客户端自己流式补。\n\n" +
+                        "之后想回到新版本，解除锁定再点更新即可。",
+                    fontSize = 13.sp, color = Color(0xFFE2E8F0), lineHeight = 18.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val version = pinnedVersion
+                    showRollbackConfirm = false
+                    if (version != null) performRollback(version)
+                }) { Text("回退", color = WowGold) }
+            },
+            dismissButton = { TextButton(onClick = { showRollbackConfirm = false }) { Text("取消") } },
+            containerColor = Color(0xFF1B2838),
+            shape = RoundedCornerShape(16.dp),
         )
     }
 
@@ -1009,6 +1100,17 @@ fun WoWForeverScreen(
 }
 
 private fun prefs(context: Context) = context.getSharedPreferences("wow_forever", Context.MODE_PRIVATE)
+
+/** The build the player chose to keep. While it is the installed one, newer builds are not advertised. */
+private object BuildPin {
+    private const val KEY = "pinned_client_version"
+
+    fun load(context: Context): String? = prefs(context).getString(KEY, null)
+
+    fun save(context: Context, version: String?) {
+        prefs(context).edit().apply { if (version == null) remove(KEY) else putString(KEY, version) }.apply()
+    }
+}
 
 /**
  * The Battle.net region WoW logs into. Without the Battle.net app to pick one, WoW stops at a region picker before

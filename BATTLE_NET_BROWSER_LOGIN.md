@@ -155,6 +155,7 @@ shows that log so a locked-down launch is never silent.
 | `stage 8 failed` | Android side aborted before sending the credential | Read the dialog message: it names the failing step |
 | `Browser sign-in could not start the game (…)` | Unexpected exception on the Android side | The parenthesised class identifies the layer; `JSONException` means a malformed device frame |
 | `unsupported sign-in address` | Redirect outside the allowlist | Add the host to `BrowserAuthUrl` |
+| `51900243` on the login screen right after the automatic sign-in, client `1.60.1.71037` | That client build is refused at login; the same token and account log in on `1.60.1.70959` | `锁定版本` keeps the working build and stops the update prompt; if the install already moved on, `回退到 1.60.1.70959` reinstalls it |
 
 ## Diagnostics
 
@@ -177,6 +178,17 @@ anti-cheat timing check.
 `browser-login.log`'s `launch options:` line lists the `WEB_TOKEN` size, `ACCOUNT_TS`, `GAME_ACCOUNT`
 and `REGION` values of the launch-options key as the previous launch left them; the protected token
 itself is never read.
+
+## Client builds
+
+The patch server only advertises the newest build, so a build that Battle.net starts refusing at the
+login screen (as `1.60.1.71037` was on 2026-11-21) would otherwise be reinstalled on every update.
+`锁定版本` stores the installed version in the `wow_forever` preferences and treats it as current, so
+the update prompt, the update card and the auto-launch gate leave it alone. `回退到 <version>` rebuilds
+the install from that build's config keys (`WowClientDownloader.KNOWN_GOOD_BUILDS`, taken from
+wago.tools' build history and still served by the CDN): it re-downloads the client binaries, adds that
+build's indexes and writes its keys into `.build.info`, while the game data stays on disk and is
+streamed as before. Unlocking and updating returns to the newest build.
 
 ## Security notes
 
