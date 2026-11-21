@@ -53,6 +53,7 @@ internal object WagoAddonSource {
         val slug: String,
         val summary: String,
         val author: String,
+        val website: String,
         val release: Release?,
     )
 
@@ -114,6 +115,7 @@ internal object WagoAddonSource {
             slug = addon.optString("slug"),
             summary = addon.optString("summary"),
             author = authorOf(metadata),
+            website = addon.optString("website"),
             release = release,
         )
     }

@@ -22,6 +22,9 @@ import timber.log.Timber
  * itself stays the source of truth: folders without a record are shown as manual installs.
  */
 internal object AddonManager {
+    const val SOURCE_WAGO = "wago"
+    const val SOURCE_CURSEFORGE = "curseforge"
+
     private const val PREFS = "wow_addons"
     private const val KEY_RECORDS = "records"
 
@@ -32,6 +35,7 @@ internal object AddonManager {
         val folders: List<String>,
         val installedAt: Long?,
         val enabled: Boolean = true,
+        val source: String = SOURCE_WAGO,
     )
 
     data class Record(
@@ -41,16 +45,16 @@ internal object AddonManager {
         val folders: List<String>,
         val installedAt: Long,
         val enabled: Boolean = true,
+        val source: String = SOURCE_WAGO,
+        val fileId: Long = 0L,
     )
 
-    data class InstallResult(
-        val addon: WagoAddonSource.Addon,
-        val release: WagoAddonSource.Release,
-        val folders: List<String>,
-    )
+    data class AvailableUpdate(val version: String, val patch: String?)
+
+    data class InstallResult(val name: String, val folders: List<String>)
 
     data class UpdateCheck(
-        val updates: Map<String, WagoAddonSource.Release>,
+        val updates: Map<String, AvailableUpdate>,
         val failures: List<String>,
         val unsupported: List<String>,
     )
@@ -118,6 +122,7 @@ internal object AddonManager {
                 folders = present,
                 installedAt = record.installedAt,
                 enabled = present.any { folders[it]?.enabled == true },
+                source = record.source,
             )
         }
         manualGroups.forEach { (stem, names) ->
@@ -142,22 +147,45 @@ internal object AddonManager {
         return if (cut >= 3) lower.substring(0, cut) else lower
     }
 
-    /** Downloads the latest release for [slug], replaces its folders and remembers the new version. */
+    /** Downloads the latest release for [slug] from [source], replaces its folders and remembers the new version. */
     suspend fun install(
         context: Context,
         addonsDir: File,
         slug: String,
+        gameVersion: String,
+        source: String = SOURCE_WAGO,
         onProgress: (Float) -> Unit = {},
     ): InstallResult = withContext(Dispatchers.IO) {
         // Read before the download so an interrupted update never loses the folders it still has to clean up.
         val previousRecord = loadRecords(context)[slug]
+        val effectiveSource = previousRecord?.source ?: source
         val previous = previousRecord?.folders.orEmpty()
-        val addon = WagoAddonSource.addon(slug)
-        val release = addon.release
-            ?: throw IOException("${addon.name.ifBlank { slug }} 还没有 WoW Forever 版本")
         val zip = File(context.cacheDir, "addon-${slug.replace(NON_FILE_CHARS, "_")}.zip")
         try {
-            Net.fetchFile(release.downloadUrl, zip) { progress -> onProgress(progress * 0.9f) }
+            val name: String
+            val version: String
+            val fileId: Long
+            val recordSlug: String
+            when (effectiveSource) {
+                SOURCE_CURSEFORGE -> {
+                    val project = CurseForgeSource.fetchZip(context, slug, gameVersion, zip) { onProgress(it) }
+                    val file = project.file ?: throw IOException("${project.title} 没有 Forever 版本")
+                    name = project.title
+                    version = file.display
+                    fileId = file.id
+                    recordSlug = project.slug
+                }
+                else -> {
+                    val addon = WagoAddonSource.addon(slug)
+                    val release = addon.release
+                        ?: throw IOException("${addon.name.ifBlank { slug }} 还没有 WoW Forever 版本")
+                    Net.fetchFile(release.downloadUrl, zip) { progress -> onProgress(progress * 0.9f) }
+                    name = addon.name.ifBlank { slug }
+                    version = release.version
+                    fileId = 0L
+                    recordSlug = slug
+                }
+            }
             onProgress(0.92f)
             val folders = AddonImporter.install(zip, addonsDir)
             deleteFolders(addonsDir, previous.filterNot { it in folders })
@@ -165,53 +193,105 @@ internal object AddonManager {
             remember(
                 context,
                 Record(
-                    slug = slug,
-                    name = addon.name.ifBlank { slug },
-                    version = release.version,
+                    slug = recordSlug,
+                    name = name,
+                    version = version,
                     folders = folders,
                     installedAt = System.currentTimeMillis(),
                     enabled = previousRecord?.enabled ?: true,
+                    source = effectiveSource,
+                    fileId = fileId,
                 ),
             )
+            // The project changed its slug: keep one record instead of an orphaned duplicate.
+            if (recordSlug != slug && previousRecord != null) forget(context, slug)
             onProgress(1f)
-            InstallResult(addon, release, folders)
+            InstallResult(name, folders)
         } finally {
             zip.delete()
         }
     }
 
     /**
-     * Fetches the latest release for every manager-installed add-on. Network failures stay per add-on so one
-     * unreachable project doesn't hide the rest; add-ons without a Forever release are reported separately.
+     * Fetches the latest release for every manager-installed add-on from the source it was installed from. Network
+     * failures stay per add-on so one unreachable project doesn't hide the rest; add-ons without a Forever release
+     * are reported separately.
      */
-    suspend fun checkUpdates(context: Context, addons: List<InstalledAddon>): UpdateCheck = withContext(Dispatchers.IO) {
+    suspend fun checkUpdates(
+        context: Context,
+        addons: List<InstalledAddon>,
+        gameVersion: String,
+        force: Boolean = false,
+    ): UpdateCheck = withContext(Dispatchers.IO) {
         val records = loadRecords(context)
         val slugs = addons.mapNotNull { it.slug }.distinct()
-        val releases = coroutineScope {
-            val semaphore = Semaphore(4)
-            slugs.map { slug ->
-                async {
-                    val result: Result<WagoAddonSource.Release?> = semaphore.withPermit {
-                        try {
-                            Result.success(WagoAddonSource.addon(slug).release)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            Timber.w(e, "Couldn't check updates for $slug")
-                            Result.failure(e)
-                        }
-                    }
-                    slug to result
-                }
-            }.awaitAll().toMap()
-        }
-
-        val updates = LinkedHashMap<String, WagoAddonSource.Release>()
+        val bySlug = addons.filter { it.slug != null }.associateBy { it.slug!! }
+        val (wago, curseForge) = slugs.partition { bySlug[it]?.source != SOURCE_CURSEFORGE }
         val failures = LinkedHashSet<String>()
         val unsupported = LinkedHashSet<String>()
+
+        val (wagoResults, forgeResults) = coroutineScope {
+            val semaphore = Semaphore(4)
+            val wagoTask = async {
+                wago.map { slug ->
+                    async {
+                        slug to semaphore.withPermit {
+                            try {
+                                Result.success(WagoAddonSource.addon(slug).release)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Timber.w(e, "Couldn't check updates for $slug")
+                                Result.failure(e)
+                            }
+                        }
+                    }
+                }.awaitAll().toMap()
+            }
+            val forgeTask = async {
+                curseForge.map { slug ->
+                    async {
+                        slug to semaphore.withPermit {
+                            try {
+                                Result.success(
+                                    CurseForgeSource.project(
+                                        context,
+                                        slug,
+                                        gameVersion,
+                                        maxAgeMs = if (force) 0 else CurseForgeSource.CACHE_TTL_MS,
+                                    ),
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Timber.w(e, "Couldn't check CurseForge updates for $slug")
+                                Result.failure(e)
+                            }
+                        }
+                    }
+                }.awaitAll().toMap()
+            }
+            wagoTask.await() to forgeTask.await()
+        }
+
+        val updates = LinkedHashMap<String, AvailableUpdate>()
         addons.forEach { addon ->
             val slug = addon.slug ?: return@forEach
-            val result = releases[slug] ?: return@forEach
+            if (addon.source == SOURCE_CURSEFORGE) {
+                val result = forgeResults[slug] ?: return@forEach
+                if (result.isFailure) {
+                    failures += addon.title
+                    return@forEach
+                }
+                val file = result.getOrThrow().file
+                if (file == null) {
+                    unsupported += addon.title
+                } else if (isCurseForgeUpdate(records[slug], file.id, file.display)) {
+                    updates[slug] = AvailableUpdate(file.display, null)
+                }
+                return@forEach
+            }
+            val result = wagoResults[slug] ?: return@forEach
             if (result.isFailure) {
                 failures += addon.title
                 return@forEach
@@ -221,11 +301,17 @@ internal object AddonManager {
                 unsupported += addon.title
             } else {
                 val record = records[slug]
-                if (record == null || record.version != release.version) updates[slug] = release
+                if (record == null || record.version != release.version) {
+                    updates[slug] = AvailableUpdate(release.version, release.patch)
+                }
             }
         }
         UpdateCheck(updates, failures.toList(), unsupported.toList())
     }
+
+    /** A CurseForge record is stale when it points at another file, or at no file from before file ids were stored. */
+    internal fun isCurseForgeUpdate(record: Record?, fileId: Long, version: String): Boolean =
+        record == null || record.fileId != fileId || (record.fileId == 0L && record.version != version)
 
     /** Deletes every folder named in [names] that is a direct child of [base], refusing path traversal. */
     internal fun deleteFolders(base: File, names: Iterable<String>): List<String> {
@@ -365,8 +451,23 @@ internal object AddonManager {
     @Synchronized
     private fun remember(context: Context, record: Record) {
         val records = loadRecords(context)
+        takeover(records, record)
         records[record.slug] = record
         writeRecords(context, records)
+    }
+
+    /**
+     * Hands folders shared with [incoming] over to it. Installing the same add-on from another source leaves two
+     * records pointing at one folder set; without this, uninstalling either one deletes folders the other still uses.
+     */
+    internal fun takeover(records: MutableMap<String, Record>, incoming: Record) {
+        records.values
+            .filter { it.slug != incoming.slug && it.folders.any { folder -> folder in incoming.folders } }
+            .forEach { other ->
+                val remaining = other.folders.filterNot { it in incoming.folders }
+                if (remaining.isEmpty()) records.remove(other.slug)
+                else records[other.slug] = other.copy(folders = remaining)
+            }
     }
 
     @Synchronized
@@ -399,6 +500,8 @@ internal object AddonManager {
                 folders = folders,
                 installedAt = json.optLong("installedAt"),
                 enabled = json.optBoolean("enabled", true),
+                source = json.optString("source").takeIf { it == SOURCE_CURSEFORGE } ?: SOURCE_WAGO,
+                fileId = json.optLong("fileId", 0L),
             )
         }
         return records
@@ -416,7 +519,9 @@ internal object AddonManager {
                     .put("version", record.version)
                     .put("folders", folders)
                     .put("installedAt", record.installedAt)
-                    .put("enabled", record.enabled),
+                    .put("enabled", record.enabled)
+                    .put("source", record.source)
+                    .put("fileId", record.fileId),
             )
         }
         return root.toString()

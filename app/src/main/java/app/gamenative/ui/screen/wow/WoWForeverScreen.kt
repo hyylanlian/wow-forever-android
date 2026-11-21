@@ -746,9 +746,16 @@ fun WoWForeverScreen(
         )
     }
 
+    val foreverGameVersion = remember(gamePath) {
+        WowClientDownloader.readBuildInfo(File(gamePath, BUILD_INFO))
+            ?.get("Version")
+            ?.split('.')?.take(3)?.joinToString(".").orEmpty()
+    }
+
     if (showAddonManager) {
         AddonManagerDialog(
             addonsDir = File(gamePath, "$FLAVOR_DIR/Interface/AddOns"),
+            gameVersion = foreverGameVersion,
             refreshKey = addonRefreshKey,
             onDismiss = { showAddonManager = false },
             onImportZip = {

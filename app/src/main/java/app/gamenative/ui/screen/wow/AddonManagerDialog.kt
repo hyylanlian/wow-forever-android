@@ -52,7 +52,12 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
@@ -67,6 +72,7 @@ private val CHECK_TIME = DateTimeFormatter.ofPattern("HH:mm")
 @Composable
 internal fun AddonManagerDialog(
     addonsDir: File,
+    gameVersion: String,
     refreshKey: Int,
     onDismiss: () -> Unit,
     onImportZip: () -> Unit,
@@ -79,7 +85,7 @@ internal fun AddonManagerDialog(
     var loadingInstalled by remember { mutableStateOf(true) }
     var checkingUpdates by remember { mutableStateOf(false) }
     var batchUpdating by remember { mutableStateOf(false) }
-    var updates by remember { mutableStateOf<Map<String, WagoAddonSource.Release>>(emptyMap()) }
+    var updates by remember { mutableStateOf<Map<String, AddonManager.AvailableUpdate>>(emptyMap()) }
     var checkWarnings by remember { mutableStateOf<List<String>>(emptyList()) }
     var busy by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
     var actionError by remember { mutableStateOf<String?>(null) }
@@ -101,7 +107,15 @@ internal fun AddonManagerDialog(
     var searchError by remember { mutableStateOf<String?>(null) }
     var searched by remember { mutableStateOf(false) }
 
-    suspend fun loadInstalled(check: Boolean) {
+    var cfQuery by remember { mutableStateOf("") }
+    var cfIndex by remember { mutableStateOf<List<CurseForgeSource.IndexEntry>>(emptyList()) }
+    var cfIndexLoaded by remember { mutableStateOf(false) }
+    var cfRows by remember { mutableStateOf<List<CfRow>>(emptyList()) }
+    var cfSearching by remember { mutableStateOf(false) }
+    var cfSearched by remember { mutableStateOf(false) }
+    var cfError by remember { mutableStateOf<String?>(null) }
+
+    suspend fun loadInstalled(check: Boolean, force: Boolean = false) {
         checkWarnings = emptyList()
         loadingInstalled = true
         installed = withContext(Dispatchers.IO) { AddonManager.installed(context, addonsDir) }
@@ -111,7 +125,7 @@ internal fun AddonManagerDialog(
             if (installed.any { it.slug != null }) {
                 checkingUpdates = true
                 try {
-                    val result = AddonManager.checkUpdates(context, installed)
+                    val result = AddonManager.checkUpdates(context, installed, gameVersion, force)
                     updates = result.updates
                     lastCheckedAt = System.currentTimeMillis()
                     checkWarnings = buildList {
@@ -134,17 +148,22 @@ internal fun AddonManagerDialog(
         loadInstalled(true)
     }
 
-    fun install(slug: String, key: String, checkAfter: Boolean) {
+    LaunchedEffect(Unit) {
+        cfIndex = withContext(Dispatchers.IO) { CurseForgeSource.index(context) }
+        cfIndexLoaded = true
+    }
+
+    fun install(slug: String, key: String, source: String, checkAfter: Boolean) {
         if (busy.containsKey(key)) return
         actionError = null
         busy = busy + (key to 0f)
         scope.launch {
             try {
-                val result = AddonManager.install(context, addonsDir, slug) { progress ->
+                val result = AddonManager.install(context, addonsDir, slug, gameVersion, source) { progress ->
                     busy = busy + (key to progress)
                 }
                 failedUpdates = failedUpdates - slug
-                SnackbarManager.show("已安装 ${result.addon.name}（${result.folders.joinToString()}）")
+                SnackbarManager.show("已安装 ${result.name}（${result.folders.joinToString()}）")
                 loadInstalled(checkAfter)
             } catch (e: CancellationException) {
                 throw e
@@ -176,7 +195,7 @@ internal fun AddonManagerDialog(
                     val slug = addon.slug ?: return@forEach
                     busy = busy + (slug to 0f)
                     try {
-                        AddonManager.install(context, addonsDir, slug) { progress ->
+                        AddonManager.install(context, addonsDir, slug, gameVersion, addon.source) { progress ->
                             busy = busy + (slug to progress)
                         }
                         updated++
@@ -255,7 +274,85 @@ internal fun AddonManagerDialog(
         }
     }
 
-    val bySlug = installed.mapNotNull { addon -> addon.slug?.let { it to addon } }.toMap()
+    suspend fun mappedRow(slug: String): CfRow? = try {
+        val addon = WagoAddonSource.addon(slug)
+        val ref = CurseForgeSource.parseInput(addon.website)
+        if (ref != null && ref.path.startsWith("wow/addons/")) {
+            CfRow(ref.path.removePrefix("wow/addons/"), addon.name, addon.summary, "Wago 匹配")
+        } else {
+            null
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.w(e, "Couldn't map Wago add-on $slug to CurseForge")
+        null
+    }
+
+    fun searchCurseForge() {
+        if (cfSearching) return
+        val text = cfQuery.trim()
+        if (text.isEmpty()) return
+        val ref = CurseForgeSource.parseInput(text)
+        cfError = null
+        cfSearched = true
+        cfSearching = true
+        cfRows = emptyList()
+        scope.launch {
+            try {
+                if (ref != null) {
+                    val project = withContext(Dispatchers.IO) {
+                        CurseForgeSource.project(context, text, gameVersion, maxAgeMs = 0)
+                    }
+                    val suffix = if (project.file == null) " · 没有 Forever 版本" else " · ${project.file.display}"
+                    cfRows = listOf(CfRow(project.slug, project.title, project.summary + suffix, "链接"))
+                } else {
+                    val q = text.lowercase(Locale.ROOT)
+                    val local = cfIndex
+                        .filter { entry ->
+                            entry.title.lowercase(Locale.ROOT).contains(q) ||
+                                entry.slug.contains(q) ||
+                                entry.summary.lowercase(Locale.ROOT).contains(q)
+                        }
+                        .map { CfRow(it.slug, it.title, it.summary, "CurseForge 目录") }
+                    // Wago detail pages often link a CurseForge project; those projects need no index entry.
+                    val mapped = try {
+                        val results = withContext(Dispatchers.IO) { WagoAddonSource.search(text, 1) }.results
+                        coroutineScope {
+                            val semaphore = Semaphore(4)
+                            results.map { result ->
+                                async { semaphore.withPermit { mappedRow(result.slug) } }
+                            }.awaitAll().filterNotNull()
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.e(e, "Wago to CurseForge mapping failed")
+                        cfError = "Wago 匹配失败：${e.message}"
+                        emptyList()
+                    }
+                    val seen = local.map { it.slug }.toSet()
+                    cfRows = local + mapped.filter { it.slug !in seen }.distinctBy { it.slug }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "CurseForge lookup failed")
+                cfError = "查找失败：${e.message}"
+                cfRows = emptyList()
+            } finally {
+                cfSearching = false
+            }
+        }
+    }
+
+    val bySlug = installed
+        .filter { it.slug != null && it.source == AddonManager.SOURCE_WAGO }
+        .associateBy { it.slug!! }
+    val forgeBySlug = installed
+        .filter { it.slug != null && it.source == AddonManager.SOURCE_CURSEFORGE }
+        .associateBy { it.slug!! }
+    val indexRows = cfIndex.map { CfRow(it.slug, it.title, it.summary, "CurseForge 目录") }
     val updateCount = installed.count { it.slug?.let { slug -> updates.containsKey(slug) } == true }
     val filter = installedFilter.trim().lowercase(Locale.ROOT)
     val visibleInstalled = installed
@@ -295,18 +392,20 @@ internal fun AddonManagerDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TabButton("已安装 ${installed.size}", tab == 0) { tab = 0 }
                     TabButton("搜索", tab == 1) { tab = 1 }
+                    TabButton("CurseForge", tab == 2) { tab = 2 }
                 }
                 HorizontalDivider(color = Color(0xFF1E2D44))
                 Spacer(Modifier.height(6.dp))
 
-                if (tab == 0) {
+                when (tab) {
+                    0 -> {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         TextButton(
-                            onClick = { scope.launch { loadInstalled(true) } },
+                            onClick = { scope.launch { loadInstalled(true, force = true) } },
                             enabled = !loadingInstalled && !checkingUpdates && !batchUpdating && togglingKey == null,
                         ) { Text("检查更新") }
                         TextButton(onClick = onImportZip, enabled = !batchUpdating && busy.isEmpty() && togglingKey == null) {
@@ -428,7 +527,8 @@ internal fun AddonManagerDialog(
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 6.dp),
                     )
-                } else {
+                }
+                    1 -> {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -480,7 +580,9 @@ internal fun AddonManagerDialog(
                                     result = result,
                                     installed = bySlug[result.slug],
                                     progress = busy[result.slug],
-                                    onInstall = { install(result.slug, result.slug, checkAfter = true) },
+                                    onInstall = {
+                                        install(result.slug, result.slug, AddonManager.SOURCE_WAGO, checkAfter = true)
+                                    },
                                 )
                                 HorizontalDivider(color = Color(0xFF1E2D44))
                             }
@@ -490,6 +592,108 @@ internal fun AddonManagerDialog(
                     if (searchPage in 1 until searchLastPage && !searching) {
                         TextButton(onClick = { search(searchPage + 1) }, modifier = Modifier.fillMaxWidth()) {
                             Text("加载更多")
+                        }
+                    }
+                }
+                    2 -> {
+                        if (gameVersion.isBlank()) {
+                            Text(
+                                "无法读取游戏版本，CurseForge 暂不可用。",
+                                color = WowSubtle,
+                                fontSize = 12.sp,
+                            )
+                        } else {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                OutlinedTextField(
+                                    value = cfQuery,
+                                    onValueChange = { cfQuery = it },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    placeholder = { Text("插件名或 CurseForge 链接", fontSize = 12.sp) },
+                                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 13.sp),
+                                )
+                                Button(
+                                    onClick = { searchCurseForge() },
+                                    enabled = !cfSearching && cfQuery.isNotBlank(),
+                                ) {
+                                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("查找")
+                                }
+                            }
+
+                            if (cfSearching) {
+                                LinearProgressIndicator(
+                                    color = WowGold,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                )
+                            }
+                            Text(
+                                "通过社区镜像读取项目信息；只安装标记了 Forever $gameVersion 的文件。",
+                                color = WowSubtle,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                            cfError?.let {
+                                Text(it, color = WowError, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+                            actionError?.let {
+                                Text(it, color = WowError, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+
+                            when {
+                                cfQuery.isBlank() && cfIndexLoaded -> LazyColumn(
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+                                ) {
+                                    items(indexRows, key = { it.slug }) { row ->
+                                        CurseForgeRow(
+                                            row = row,
+                                            installed = forgeBySlug[row.slug],
+                                            updateAvailable = updates.containsKey(row.slug),
+                                            progress = busy[row.slug],
+                                            onInstall = {
+                                                install(
+                                                    row.slug,
+                                                    row.slug,
+                                                    AddonManager.SOURCE_CURSEFORGE,
+                                                    checkAfter = true,
+                                                )
+                                            },
+                                        )
+                                        HorizontalDivider(color = Color(0xFF1E2D44))
+                                    }
+                                }
+                                cfQuery.isBlank() -> BoxProgress("正在读取插件目录…")
+                                cfSearched && cfRows.isEmpty() && !cfSearching -> Text(
+                                    "没有匹配的 CurseForge 插件。",
+                                    color = WowSubtle,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                                else -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+                                    items(cfRows, key = { it.slug }) { row ->
+                                        CurseForgeRow(
+                                            row = row,
+                                            installed = forgeBySlug[row.slug],
+                                            updateAvailable = updates.containsKey(row.slug),
+                                            progress = busy[row.slug],
+                                            onInstall = {
+                                                install(
+                                                    row.slug,
+                                                    row.slug,
+                                                    AddonManager.SOURCE_CURSEFORGE,
+                                                    checkAfter = true,
+                                                )
+                                            },
+                                        )
+                                        HorizontalDivider(color = Color(0xFF1E2D44))
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -572,7 +776,7 @@ private fun BoxProgress(text: String) {
 @Composable
 private fun InstalledRow(
     addon: AddonManager.InstalledAddon,
-    update: WagoAddonSource.Release?,
+    update: AddonManager.AvailableUpdate?,
     progress: Float?,
     failed: Boolean,
     uninstalling: Boolean,
@@ -595,10 +799,15 @@ private fun InstalledRow(
                 )
                 val installedAt = addon.installedAt?.let { " · 安装于 ${installedDate(it)}" }.orEmpty()
                 val disabled = if (addon.enabled) "" else " · 已禁用"
+                val sourceLabel = when {
+                    addon.slug == null -> "手动"
+                    addon.source == AddonManager.SOURCE_CURSEFORGE -> "CurseForge"
+                    else -> "Wago"
+                }
                 Text(
                     "${addon.folders.joinToString(", ")} · " +
                         "${if (addon.version.isBlank()) "版本未知" else "v${addon.version}"} · " +
-                        "${if (addon.slug == null) "手动" else "Wago"}$installedAt$disabled",
+                        "$sourceLabel$installedAt$disabled",
                     color = WowSubtle,
                     fontSize = 11.sp,
                     maxLines = 2,
@@ -690,6 +899,69 @@ private fun SearchRow(
         if (result.summary.isNotBlank()) {
             Text(
                 result.summary,
+                color = WowMuted,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+private data class CfRow(
+    val slug: String,
+    val title: String,
+    val summary: String,
+    val origin: String,
+)
+
+@Composable
+private fun CurseForgeRow(
+    row: CfRow,
+    installed: AddonManager.InstalledAddon?,
+    updateAvailable: Boolean,
+    progress: Float?,
+    onInstall: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    row.title,
+                    color = TITLE_COLOR,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val installedLabel = installed?.let {
+                    " · 已安装 ${if (it.version.isBlank()) "版本未知" else "v${it.version}"}"
+                }.orEmpty()
+                Text(
+                    "${row.origin} · ${row.slug}$installedLabel",
+                    color = WowSubtle,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            when {
+                progress != null -> Text("${(progress * 100).toInt()}%", color = WowGold, fontSize = 12.sp)
+                else -> TextButton(onClick = onInstall) {
+                    Text(
+                        when {
+                            updateAvailable -> "更新"
+                            installed != null -> "重新安装"
+                            else -> "安装"
+                        },
+                    )
+                }
+            }
+        }
+        if (row.summary.isNotBlank()) {
+            Text(
+                row.summary,
                 color = WowMuted,
                 fontSize = 11.sp,
                 maxLines = 2,

@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-21",
+  "gameVersion": "1.60.1",
+  "addons": [
+    {
+      "id": 6124,
+      "slug": "auctionator",
+      "title": "Auctionator",
+      "summary": "Makes it easier to use the auction house and track the value of items"
+    },
+    {
+      "id": 1592,
+      "slug": "bagnon",
+      "title": "Bagnon",
+      "summary": "See your inventory, bank, guild and alts from anywhere"
+    },
+    {
+      "id": 13501,
+      "slug": "bartender4",
+      "title": "Bartender4",
+      "summary": "Simple and Advanced combined - Bartender4 ActionBar AddOn"
+    },
+    {
+      "id": 15564,
+      "slug": "clique",
+      "title": "Clique",
+      "summary": "Simply powerful click-casting interface"
+    },
+    {
+      "id": 61284,
+      "slug": "details",
+      "title": "Details! Damage Meter",
+      "summary": "Complete combat analysis, gathering damage, healing, and other importante stuff."
+    },
+    {
+      "id": 6650,
+      "slug": "dominos",
+      "title": "Dominos",
+      "summary": "A main action bar replacement"
+    },
+    {
+      "id": 26120,
+      "slug": "gathermate2",
+      "title": "GatherMate2",
+      "summary": "Collects Herbs, Mines, Gas Clouds, Archaeology, Treasure and Fishing locations and adds them to the worldmap and minimap"
+    },
+    {
+      "id": 15226,
+      "slug": "grid2",
+      "title": "Grid2",
+      "summary": "A modular, lightweight and screen-estate saving grid of party/raid unit frames"
+    },
+    {
+      "id": 14154,
+      "slug": "handynotes",
+      "title": "HandyNotes",
+      "summary": "Handy notes for your maps"
+    },
+    {
+      "id": 94855,
+      "slug": "leatrix-plus",
+      "title": "Leatrix Plus (USE THIS ONE)",
+      "summary": "Powerful and modular quality of life addon with a small resource footprint.  Supports all WoW games including Midnight and Burning Crusade Classic Anniversary (as well as all the others)."
+    },
+    {
+      "id": 13592,
+      "slug": "masque",
+      "title": "Masque",
+      "summary": "A skinning engine for button-based add-ons."
+    },
+    {
+      "id": 4646,
+      "slug": "pawn",
+      "title": "Pawn",
+      "summary": "Pawn helps you compare items and find upgrades."
+    },
+    {
+      "id": 100547,
+      "slug": "plater-nameplates",
+      "title": "Plater Nameplates",
+      "summary": "Highly customizable nameplate with support to scripts and animations."
+    },
+    {
+      "id": 4558,
+      "slug": "quartz",
+      "title": "Quartz",
+      "summary": "Modular casting bar."
+    },
+    {
+      "id": 5422,
+      "slug": "scrap",
+      "title": "Scrap (Junk Seller)",
+      "summary": "Sells all your junk when you visit a merchant. Intuitive & Easy to use."
+    },
+    {
+      "id": 1458545,
+      "slug": "selljunk",
+      "title": "SellJunk",
+      "summary": "Sell gray items to vendors"
+    },
+    {
+      "id": 15936,
+      "slug": "sexymap",
+      "title": "SexyMap",
+      "summary": "Spice up your minimap with some sexy options."
+    },
+    {
+      "id": 82745,
+      "slug": "simulationcraft",
+      "title": "Simulationcraft",
+      "summary": "An addon that generates a Simulationcraft profile for your character"
+    },
+    {
+      "id": 445339,
+      "slug": "skillet",
+      "title": "Skillet",
+      "summary": "A replacement tradeskill window"
+    },
+    {
+      "id": 8025,
+      "slug": "tellmewhen",
+      "title": "TellMeWhen",
+      "summary": "Provides visual, auditory, and textual notifications about cooldowns, buffs, and pretty much every other element of combat."
+    },
+    {
+      "id": 18808,
+      "slug": "tomtom",
+      "title": "TomTom",
+      "summary": "Acts as your portable navigation assistant"
+    },
+    {
+      "id": 6384,
+      "slug": "totemtimers",
+      "title": "TotemTimers Forever",
+      "summary": "TotemTimers"
+    },
+    {
+      "id": 7950,
+      "slug": "vuhdo",
+      "title": "VuhDo",
+      "summary": "Raid Frames providing click-heal functionality, buff and debuff control, main tank management and much more."
+    },
+    {
+      "id": 14911,
+      "slug": "xperl",
+      "title": "X-Perl UnitFrames",
+      "summary": "Replaces the normal unit, party, target, pet frames and adds target-of-target."
+    }
+  ]
+}

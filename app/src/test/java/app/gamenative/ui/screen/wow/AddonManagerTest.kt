@@ -86,7 +86,8 @@ class AddonManagerTest {
                         JSONObject()
                             .put("display_name", "Details! Damage Meter")
                             .put("slug", "details-damage-meter-standalone")
-                            .put("summary", "Combat analyzer"),
+                            .put("summary", "Combat analyzer")
+                            .put("website", "https://www.curseforge.com/wow/addons/details"),
                     )
                     .put(
                         "metadata",
@@ -111,6 +112,7 @@ class AddonManagerTest {
         assertEquals("Details! Damage Meter", addon.name)
         assertEquals("details-damage-meter-standalone", addon.slug)
         assertEquals("Terciob", addon.author)
+        assertEquals("https://www.curseforge.com/wow/addons/details", addon.website)
         assertEquals("Details.20261109.15410.172", addon.release?.version)
         assertEquals("https://addons.wago.io/download/abc", addon.release?.downloadUrl)
         assertEquals("1.60.1", addon.release?.patch)
@@ -128,6 +130,21 @@ class AddonManagerTest {
         )
 
         assertNull(WagoAddonSource.parseAddon(html)?.release)
+    }
+
+    @Test
+    fun addon_withoutWebsiteHasEmptyString() {
+        val html = page(
+            JSONObject().put(
+                "props",
+                JSONObject().put(
+                    "addon",
+                    JSONObject().put("display_name", "Bagnon").put("slug", "bagnon"),
+                ),
+            ),
+        )
+
+        assertEquals("", WagoAddonSource.parseAddon(html)!!.website)
     }
 
     @Test
@@ -155,6 +172,8 @@ class AddonManagerTest {
                 folders = listOf("Details"),
                 installedAt = 1_700_000_000_000,
                 enabled = false,
+                source = AddonManager.SOURCE_CURSEFORGE,
+                fileId = 9675720L,
             ),
         )
 
@@ -162,6 +181,96 @@ class AddonManagerTest {
 
         assertEquals(records, decoded)
         assertTrue(AddonManager.decodeRecords("not json").isEmpty())
+    }
+
+    @Test
+    fun decodeRecords_defaultsSourceAndFileId() {
+        val raw = JSONObject()
+            .put(
+                "details",
+                JSONObject()
+                    .put("name", "Details! Damage Meter")
+                    .put("version", "Details.20261109")
+                    .put("folders", JSONArray().put("Details"))
+                    .put("installedAt", 5L)
+                    .put("enabled", true),
+            )
+            .toString()
+
+        val record = AddonManager.decodeRecords(raw).getValue("details")
+
+        assertEquals(AddonManager.SOURCE_WAGO, record.source)
+        assertEquals(0L, record.fileId)
+    }
+
+    @Test
+    fun isCurseForgeUpdate_comparesFileId() {
+        val record = AddonManager.Record(
+            slug = "details",
+            name = "Details! Damage Meter",
+            version = "Details.20261109",
+            folders = listOf("Details"),
+            installedAt = 1L,
+            source = AddonManager.SOURCE_CURSEFORGE,
+            fileId = 9675720L,
+        )
+
+        assertTrue(AddonManager.isCurseForgeUpdate(null, 9675720L, "Details.20261109"))
+        assertTrue(AddonManager.isCurseForgeUpdate(record, 9675721L, "Details.20261109"))
+        assertFalse(AddonManager.isCurseForgeUpdate(record, 9675720L, "Details.20261109"))
+        assertTrue(AddonManager.isCurseForgeUpdate(record.copy(fileId = 0L), 0L, "Details.20261110"))
+        assertFalse(AddonManager.isCurseForgeUpdate(record.copy(fileId = 0L), 0L, "Details.20261109"))
+    }
+
+    @Test
+    fun takeover_movesSharedFoldersToTheNewRecord() {
+        val records = mutableMapOf(
+            "wago-details" to AddonManager.Record(
+                slug = "wago-details",
+                name = "Details! Damage Meter",
+                version = "1.0",
+                folders = listOf("Details", "Details_Options"),
+                installedAt = 1L,
+            ),
+            "other" to AddonManager.Record(
+                slug = "other",
+                name = "Bagnon",
+                version = "2.0",
+                folders = listOf("Bagnon"),
+                installedAt = 2L,
+            ),
+        )
+
+        AddonManager.takeover(
+            records,
+            AddonManager.Record(
+                slug = "details",
+                name = "Details! Damage Meter",
+                version = "3.0",
+                folders = listOf("Details"),
+                installedAt = 3L,
+                source = AddonManager.SOURCE_CURSEFORGE,
+                fileId = 9675720L,
+            ),
+        )
+
+        assertEquals(listOf("Details_Options"), records["wago-details"]?.folders)
+        assertEquals(listOf("Bagnon"), records["other"]?.folders)
+
+        AddonManager.takeover(
+            records,
+            AddonManager.Record(
+                slug = "details",
+                name = "Details! Damage Meter",
+                version = "3.0",
+                folders = listOf("Details", "Details_Options", "Bagnon"),
+                installedAt = 3L,
+                source = AddonManager.SOURCE_CURSEFORGE,
+                fileId = 9675720L,
+            ),
+        )
+
+        assertEquals(setOf("details"), records.keys)
     }
 
     @Test
