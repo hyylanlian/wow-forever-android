@@ -441,9 +441,11 @@ internal object DriverCatalog {
         require(staging.canonicalFile.parentFile == rootCanonical) { "Invalid staging path: $name" }
         require(backup.canonicalFile.parentFile == rootCanonical) { "Invalid backup path: $name" }
         root.mkdirs()
+        if (!root.isDirectory) throw IOException("无法创建驱动目录")
         recoverInterrupted(root)
         staging.deleteRecursively()
         backup.deleteRecursively()
+        if (staging.exists() || backup.exists()) throw IOException("无法清理驱动临时目录")
         try {
             validateZip(zip, staging)
             extractZip(zip, staging)
