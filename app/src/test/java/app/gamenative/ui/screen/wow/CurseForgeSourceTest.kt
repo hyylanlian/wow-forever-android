@@ -1,6 +1,7 @@
 package app.gamenative.ui.screen.wow
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,6 +47,16 @@ class CurseForgeSourceTest {
         assertNull(CurseForgeSource.parseInput(""))
         assertNull(CurseForgeSource.parseInput("../x"))
         assertNull(CurseForgeSource.parseInput("a/b"))
+    }
+
+    @Test
+    fun isDirectQuery_reservesUrlsAndIds() {
+        assertTrue(CurseForgeSource.isDirectQuery("https://www.curseforge.com/wow/addons/details"))
+        assertTrue(CurseForgeSource.isDirectQuery("www.curseforge.com/wow/addons/pawn"))
+        assertTrue(CurseForgeSource.isDirectQuery("61284"))
+        assertFalse(CurseForgeSource.isDirectQuery("details"))
+        assertFalse(CurseForgeSource.isDirectQuery("Details!"))
+        assertFalse(CurseForgeSource.isDirectQuery("伤害统计"))
     }
 
     @Test

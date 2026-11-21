@@ -289,6 +289,11 @@ internal fun AddonManagerDialog(
         null
     }
 
+    fun projectRow(project: CurseForgeSource.Project): CfRow {
+        val suffix = if (project.file == null) " · 没有 Forever 版本" else " · ${project.file.display}"
+        return CfRow(project.slug, project.title, project.summary + suffix, "链接")
+    }
+
     fun searchCurseForge() {
         if (cfSearching) return
         val text = cfQuery.trim()
@@ -300,12 +305,11 @@ internal fun AddonManagerDialog(
         cfRows = emptyList()
         scope.launch {
             try {
-                if (ref != null) {
+                if (ref != null && CurseForgeSource.isDirectQuery(text)) {
                     val project = withContext(Dispatchers.IO) {
                         CurseForgeSource.project(context, text, gameVersion, maxAgeMs = 0)
                     }
-                    val suffix = if (project.file == null) " · 没有 Forever 版本" else " · ${project.file.display}"
-                    cfRows = listOf(CfRow(project.slug, project.title, project.summary + suffix, "链接"))
+                    cfRows = listOf(projectRow(project))
                 } else {
                     val q = text.lowercase(Locale.ROOT)
                     val local = cfIndex
@@ -332,7 +336,23 @@ internal fun AddonManagerDialog(
                         emptyList()
                     }
                     val seen = local.map { it.slug }.toSet()
-                    cfRows = local + mapped.filter { it.slug !in seen }.distinctBy { it.slug }
+                    val rows = local + mapped.filter { it.slug !in seen }.distinctBy { it.slug }
+                    // A bare slug the index doesn't know still resolves through cfwidget. Misses stay "no match".
+                    val fallback = if (rows.isEmpty() && ref != null) {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                CurseForgeSource.project(context, text, gameVersion, maxAgeMs = 0)
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Timber.w(e, "No CurseForge project for $text")
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                    cfRows = if (rows.isEmpty() && fallback != null) listOf(projectRow(fallback)) else rows
                 }
             } catch (e: CancellationException) {
                 throw e

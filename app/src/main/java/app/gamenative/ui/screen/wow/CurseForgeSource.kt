@@ -70,6 +70,15 @@ internal object CurseForgeSource {
         return null
     }
 
+    /**
+     * True for inputs that name one project outright: a CurseForge URL or a numeric project id. Anything else is
+     * searched in the shipped index and through Wago first, so partial names still find projects.
+     */
+    internal fun isDirectQuery(raw: String): Boolean {
+        val text = raw.trim()
+        return text.contains("curseforge.com", ignoreCase = true) || PROJECT_ID.matches(text)
+    }
+
     internal fun parseProject(json: String, gameVersion: String): Project? {
         val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
         val id = root.optLong("id", 0L)
