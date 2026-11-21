@@ -125,7 +125,7 @@ internal object DriverCatalog {
     private const val KEY_DOWNLOADS = "downloads"
 
     private const val CATALOG_RAW =
-        "https://raw.githubusercontent.com/hyylanlian/wow-forever-android/main/drivers.json"
+        "https://raw.githubusercontent.com/hyylanlian/wow-forever-android/main/drivers.json?v=2"
     private val CATALOG_URLS = listOf(
         "https://gh-proxy.com/$CATALOG_RAW",
         "https://ghfast.top/$CATALOG_RAW",
