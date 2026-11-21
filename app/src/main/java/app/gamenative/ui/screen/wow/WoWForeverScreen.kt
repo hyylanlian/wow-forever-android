@@ -540,10 +540,12 @@ fun WoWForeverScreen(
                         )
                         versionStatus?.let { version ->
                             CheckItem(
-                                label = if (version.isOutdated) {
-                                    "客户端版本：${version.localVersion}（可更新到 ${version.remoteVersion}）"
-                                } else {
-                                    "客户端版本：${version.localVersion}（已是最新）"
+                                label = when {
+                                    pinnedVersion != null && version.localVersion == pinnedVersion ->
+                                        "客户端版本：${version.localVersion}（已锁定，跳过 ${version.remoteVersion}）"
+                                    version.isOutdated ->
+                                        "客户端版本：${version.localVersion}（可更新到 ${version.remoteVersion}）"
+                                    else -> "客户端版本：${version.localVersion}（已是最新）"
                                 },
                                 ready = !version.isOutdated,
                             )
