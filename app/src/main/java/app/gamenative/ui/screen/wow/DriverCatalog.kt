@@ -2,7 +2,6 @@ package app.gamenative.ui.screen.wow
 
 import android.content.Context
 import app.gamenative.utils.Net
-import com.winlator.core.FileUtils
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -447,7 +446,7 @@ internal object DriverCatalog {
         backup.deleteRecursively()
         try {
             validateZip(zip, staging)
-            if (!FileUtils.extractZipFromFile(zip, staging)) throw IOException("驱动包无法解压")
+            extractZip(zip, staging)
             val meta = readMeta(staging) ?: throw IOException("驱动包缺少 meta.json 或 libraryName")
             if (meta.libraryName.isBlank()) throw IOException("驱动包缺少 meta.json 或 libraryName")
 
@@ -482,6 +481,30 @@ internal object DriverCatalog {
                 val dest = File(base, entry.name).canonicalFile
                 if (dest.path != base.path && !dest.path.startsWith(prefix)) {
                     throw IOException("Invalid path in driver zip: ${entry.name}")
+                }
+            }
+        }
+    }
+
+    private fun extractZip(zip: File, staging: File) {
+        val base = staging.canonicalFile
+        val prefix = base.path + File.separator
+        ZipFile(zip).use { archive ->
+            archive.entries().asSequence().forEach { entry ->
+                val dest = File(base, entry.name).canonicalFile
+                if (entry.isDirectory) {
+                    if (dest.path != base.path && !dest.path.startsWith(prefix)) {
+                        throw IOException("Invalid path in driver zip: ${entry.name}")
+                    }
+                    dest.mkdirs()
+                } else {
+                    if (dest.path == base.path || !dest.path.startsWith(prefix)) {
+                        throw IOException("Invalid path in driver zip: ${entry.name}")
+                    }
+                    dest.parentFile?.mkdirs()
+                    archive.getInputStream(entry).use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    }
                 }
             }
         }
