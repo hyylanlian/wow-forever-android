@@ -103,8 +103,9 @@ internal fun DriverManagerDialog(
         downloaded = cached.second
         catalog = cached.third
         installedLoaded = true
-        if (catalog == null ||
-            catalog.version < DriverCatalog.MIN_CATALOG_VERSION ||
+        val cachedCatalog = catalog
+        if (cachedCatalog == null ||
+            cachedCatalog.version < DriverCatalog.MIN_CATALOG_VERSION ||
             DriverCatalog.catalogAgeMs(context) > DriverCatalog.CATALOG_TTL_MS
         ) {
             refresh()
