@@ -204,6 +204,27 @@ class AddonManagerTest {
     }
 
     @Test
+    fun decodeRecords_replacesNullTextWithFallbacks() {
+        val raw = JSONObject()
+            .put(
+                "console-port",
+                JSONObject()
+                    .put("name", "null")
+                    .put("version", "null")
+                    .put("folders", JSONArray().put("ConsolePort"))
+                    .put("source", AddonManager.SOURCE_CURSEFORGE)
+                    .put("fileId", 9673432L),
+            )
+            .toString()
+
+        val record = AddonManager.decodeRecords(raw).getValue("console-port")
+
+        assertEquals("console-port", record.name)
+        assertEquals("", record.version)
+        assertEquals(9673432L, record.fileId)
+    }
+
+    @Test
     fun isCurseForgeUpdate_comparesFileId() {
         val record = AddonManager.Record(
             slug = "details",
@@ -286,6 +307,27 @@ class AddonManagerTest {
         assertEquals("details", installed.single().slug)
         assertEquals(listOf("Details", "Details_Options"), installed.single().folders)
         assertEquals(123L, installed.single().installedAt)
+    }
+
+    @Test
+    fun groupInstalled_replacesNullRecordTextWithTocValues() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        val dir = File(addonsDir, "ConsolePort").apply { mkdirs() }
+        File(dir, "ConsolePort.toc").writeText("## Title: ConsolePort\n## Version: 3.3.15\n")
+        val record = AddonManager.Record(
+            slug = "console-port",
+            name = "null",
+            version = "null",
+            folders = listOf("ConsolePort"),
+            installedAt = 1L,
+            source = AddonManager.SOURCE_CURSEFORGE,
+            fileId = 9673432L,
+        )
+
+        val installed = AddonManager.groupInstalled(addonsDir, mapOf("console-port" to record))
+
+        assertEquals("ConsolePort", installed.single().title)
+        assertEquals("3.3.15", installed.single().version)
     }
 
     @Test

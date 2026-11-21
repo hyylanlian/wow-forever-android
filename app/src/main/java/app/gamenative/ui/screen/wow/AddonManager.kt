@@ -115,9 +115,10 @@ internal object AddonManager {
         records.values.forEach { record ->
             val present = recordFolders[record.slug].orEmpty().distinct()
             if (present.isEmpty()) return@forEach
+            val toc = folders[present.first()]?.toc
             grouped += InstalledAddon(
-                title = record.name.ifBlank { folders[present.first()]?.toc?.title ?: present.first() },
-                version = record.version.ifBlank { folders[present.first()]?.toc?.version.orEmpty() },
+                title = clean(record.name).ifBlank { clean(toc?.title).ifBlank { present.first() } },
+                version = clean(record.version).ifBlank { clean(toc?.version) },
                 slug = record.slug,
                 folders = present,
                 installedAt = record.installedAt,
@@ -130,8 +131,8 @@ internal object AddonManager {
             val primary = present.first()
             val meta = folders[primary]?.toc
             grouped += InstalledAddon(
-                title = meta?.title?.takeIf { it.isNotBlank() } ?: stem,
-                version = meta?.version.orEmpty(),
+                title = clean(meta?.title).ifBlank { stem },
+                version = clean(meta?.version),
                 slug = null,
                 folders = present,
                 installedAt = null,
@@ -140,6 +141,10 @@ internal object AddonManager {
         }
         return grouped.sortedBy { it.title.lowercase(Locale.ROOT) }
     }
+
+    /** JSON null reaches us as the literal "null"; neither it nor blank text is a usable field value. */
+    internal fun clean(value: String?): String =
+        value?.trim().takeUnless { it.isNullOrEmpty() || it.equals("null", ignoreCase = true) }.orEmpty()
 
     private fun manualGroupKey(folder: String): String {
         val lower = folder.lowercase(Locale.ROOT)
@@ -495,8 +500,8 @@ internal object AddonManager {
             }.orEmpty()
             records[slug] = Record(
                 slug = slug,
-                name = json.optString("name").ifBlank { slug },
-                version = json.optString("version"),
+                name = clean(json.optString("name")).ifBlank { slug },
+                version = clean(json.optString("version")),
                 folders = folders,
                 installedAt = json.optLong("installedAt"),
                 enabled = json.optBoolean("enabled", true),

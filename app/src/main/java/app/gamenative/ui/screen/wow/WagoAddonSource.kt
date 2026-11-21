@@ -111,19 +111,23 @@ internal object WagoAddonSource {
                 }
             }
         return Addon(
-            name = addon.optString("display_name").ifBlank { addon.optString("slug") },
-            slug = addon.optString("slug"),
-            summary = addon.optString("summary"),
+            name = text(addon.optString("display_name")).ifBlank { text(addon.optString("slug")) },
+            slug = text(addon.optString("slug")),
+            summary = text(addon.optString("summary")),
             author = authorOf(metadata),
-            website = addon.optString("website"),
+            website = text(addon.optString("website")),
             release = release,
         )
     }
 
+    /** Wago's JSON can carry `null`, which `optString` would render as the literal "null". */
+    private fun text(value: String?): String =
+        value?.trim().takeUnless { it.isNullOrEmpty() || it.equals("null", ignoreCase = true) }.orEmpty()
+
     private fun authorOf(metadata: JSONObject?): String {
-        val owner = metadata?.optString("owner").orEmpty()
+        val owner = text(metadata?.optString("owner"))
         if (owner.isNotBlank()) return owner
-        return metadata?.optJSONArray("developers")?.optJSONObject(0)?.optString("name").orEmpty()
+        return text(metadata?.optJSONArray("developers")?.optJSONObject(0)?.optString("name"))
     }
 
     private fun parseCard(card: String): SearchResult? {

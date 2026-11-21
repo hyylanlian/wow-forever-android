@@ -57,14 +57,15 @@ internal object CurseForgeSource {
 
     data class IndexEntry(val id: Long, val slug: String, val title: String, val summary: String)
 
-    /** Accepts a CurseForge project URL, a bare slug or a numeric project id. */
+    /** Accepts a CurseForge project URL, a bare slug or a numeric project id (optionally prefixed with `#`). */
     fun parseInput(raw: String): Ref? {
         val text = raw.trim()
         if (text.isEmpty()) return null
         PROJECT_URL.matchEntire(text)?.let { match ->
             return Ref("wow/addons/" + match.groupValues[1].lowercase(Locale.ROOT))
         }
-        if (PROJECT_ID.matches(text)) return Ref(text)
+        val id = text.removePrefix("#").trim()
+        if (PROJECT_ID.matches(id)) return Ref("wow/addons/$id")
         val lower = text.lowercase(Locale.ROOT)
         if (SLUG.matches(lower)) return Ref("wow/addons/$lower")
         return null
@@ -76,33 +77,34 @@ internal object CurseForgeSource {
      */
     internal fun isDirectQuery(raw: String): Boolean {
         val text = raw.trim()
-        return text.contains("curseforge.com", ignoreCase = true) || PROJECT_ID.matches(text)
+        return text.contains("curseforge.com", ignoreCase = true) || PROJECT_ID.matches(text.removePrefix("#").trim())
     }
 
     internal fun parseProject(json: String, gameVersion: String): Project? {
         val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
         val id = root.optLong("id", 0L)
         if (id <= 0L) return null
-        val title = root.optString("title").ifBlank { "CurseForge #$id" }
         val authors = LinkedHashSet<String>()
         root.optJSONArray("members")?.let { members ->
             for (index in 0 until members.length()) {
-                val name = members.optJSONObject(index)?.optString("username").orEmpty().trim()
-                if (name.isNotEmpty()) authors += name
+                members.optJSONObject(index)?.let { member ->
+                    member.text("username").takeIf { it.isNotEmpty() }?.let(authors::add)
+                }
             }
         }
-        val slug = root.optJSONObject("urls")
-            ?.optString("curseforge")
+        val urlSlug = root.optJSONObject("urls")
+            ?.text("curseforge")
             ?.substringAfterLast('/')
             ?.takeIf { SLUG.matches(it) }
-            ?: id.toString()
+        // cfwidget occasionally reports `"title": null`; a raw optString would render the literal "null".
+        val title = root.text("title").ifBlank { urlSlug ?: "CurseForge #$id" }
         val download = root.optJSONObject("download")
         val file = download?.let(::fileOf)?.takeIf { gameVersion in it.versions }
         return Project(
             id = id,
-            slug = slug,
+            slug = urlSlug ?: id.toString(),
             title = title,
-            summary = root.optString("summary"),
+            summary = root.text("summary"),
             author = authors.joinToString(", "),
             file = file,
         )
@@ -119,10 +121,10 @@ internal object CurseForgeSource {
         for (index in 0 until addons.length()) {
             val item = addons.optJSONObject(index) ?: continue
             val id = item.optLong("id", 0L)
-            val slug = item.optString("slug")
-            val title = item.optString("title")
+            val slug = item.text("slug")
+            val title = item.text("title")
             if (id <= 0L || !SLUG.matches(slug) || title.isBlank()) continue
-            entries.putIfAbsent(slug, IndexEntry(id, slug, title, item.optString("summary")))
+            entries.putIfAbsent(slug, IndexEntry(id, slug, title, item.text("summary")))
         }
         return entries.values.sortedBy { it.title.lowercase(Locale.ROOT) }
     }
@@ -153,7 +155,13 @@ internal object CurseForgeSource {
             .header("Accept", "application/json")
             .build()
         val body = Net.http.newCall(request).execute().use { response ->
-            if (response.code == 404) throw IOException("CurseForge 没有项目：$input")
+            if (response.code == 404) {
+                val numeric = PROJECT_ID.matches(ref.path.substringAfterLast('/'))
+                throw IOException(
+                    if (numeric) "CurseForge 没有项目：$input（若这是文件 ID，请粘贴完整文件链接）"
+                    else "CurseForge 没有项目：$input",
+                )
+            }
             if (!response.isSuccessful) throw IOException("CurseForge HTTP ${response.code}")
             response.body?.string()?.takeIf { it.isNotBlank() }
                 ?: throw IOException("CurseForge 返回了空内容")
@@ -208,37 +216,48 @@ internal object CurseForgeSource {
     internal fun decodeCached(json: String): Project? {
         val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
         val id = root.optLong("id", 0L)
-        val slug = root.optString("slug")
-        val title = root.optString("title")
+        val slug = root.text("slug")
+        val title = root.text("title")
         if (id <= 0L || slug.isBlank() || title.isBlank()) return null
         return Project(
             id = id,
             slug = slug,
             title = title,
-            summary = root.optString("summary"),
-            author = root.optString("author"),
+            summary = root.text("summary"),
+            author = root.text("author"),
             file = root.optJSONObject("file")?.let(::fileOf),
         )
     }
 
+    /** `optString` turns JSON null into the literal "null"; treat both null and that literal as empty. */
+    private fun jsonText(value: Any?): String = when (value) {
+        null, JSONObject.NULL -> ""
+        is String -> value.trim().takeUnless { it.equals("null", ignoreCase = true) }.orEmpty()
+        else -> value.toString().trim()
+    }
+
+    private fun JSONObject.text(key: String): String = jsonText(opt(key))
+
+    private fun JSONArray.text(index: Int): String = jsonText(opt(index))
+
     private fun fileOf(json: JSONObject): ProjectFile? {
         val id = json.optLong("id", 0L)
-        val name = json.optString("name")
+        val name = json.text("name")
         if (id <= 0L || name.isBlank() || name.contains('/') || name.contains('\\')) return null
         val versions = ArrayList<String>()
         json.optJSONArray("versions")?.let { array ->
             for (index in 0 until array.length()) {
-                array.optString(index).takeIf { it.isNotBlank() }?.let(versions::add)
+                array.text(index).takeIf { it.isNotEmpty() }?.let(versions::add)
             }
         }
         return ProjectFile(
             id = id,
             name = name,
-            display = json.optString("display").ifBlank { id.toString() },
-            type = json.optString("type"),
+            display = json.text("display").ifBlank { id.toString() },
+            type = json.text("type"),
             size = json.optLong("filesize", -1L).takeIf { it >= 0L } ?: json.optLong("size", -1L),
             versions = versions,
-            uploadedAt = json.optString("uploaded_at").ifBlank { json.optString("uploadedAt") },
+            uploadedAt = json.text("uploaded_at").ifBlank { json.text("uploadedAt") },
         )
     }
 }

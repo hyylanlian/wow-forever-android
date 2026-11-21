@@ -41,7 +41,8 @@ class CurseForgeSourceTest {
             CurseForgeSource.parseInput("www.curseforge.com/wow/addons/pawn"),
         )
         assertEquals(CurseForgeSource.Ref("wow/addons/details"), CurseForgeSource.parseInput("Details"))
-        assertEquals(CurseForgeSource.Ref("61284"), CurseForgeSource.parseInput("61284"))
+        assertEquals(CurseForgeSource.Ref("wow/addons/61284"), CurseForgeSource.parseInput("61284"))
+        assertEquals(CurseForgeSource.Ref("wow/addons/61284"), CurseForgeSource.parseInput("#61284"))
 
         assertNull(CurseForgeSource.parseInput("https://github.com/hyylanlian/wow-forever-android"))
         assertNull(CurseForgeSource.parseInput(""))
@@ -54,6 +55,7 @@ class CurseForgeSourceTest {
         assertTrue(CurseForgeSource.isDirectQuery("https://www.curseforge.com/wow/addons/details"))
         assertTrue(CurseForgeSource.isDirectQuery("www.curseforge.com/wow/addons/pawn"))
         assertTrue(CurseForgeSource.isDirectQuery("61284"))
+        assertTrue(CurseForgeSource.isDirectQuery("#61284"))
         assertFalse(CurseForgeSource.isDirectQuery("details"))
         assertFalse(CurseForgeSource.isDirectQuery("Details!"))
         assertFalse(CurseForgeSource.isDirectQuery("伤害统计"))
@@ -81,6 +83,38 @@ class CurseForgeSourceTest {
     @Test
     fun parseProject_marksMissingForeverFile() {
         assertNull(CurseForgeSource.parseProject(projectJson(listOf("12.1.5")), "1.60.1")?.file)
+    }
+
+    @Test
+    fun parseProject_handlesJsonNullFields() {
+        val json = """
+            {
+              "id": 91376,
+              "title": null,
+              "summary": null,
+              "urls": {"curseforge": "https://www.curseforge.com/wow/addons/console-port"},
+              "members": [{"username": null}],
+              "download": {
+                "id": 9673432,
+                "name": "ConsolePort-3.3.15.zip",
+                "display": null,
+                "type": null,
+                "filesize": 17884514,
+                "versions": ["1.60.1"],
+                "uploaded_at": null
+              }
+            }
+        """.trimIndent()
+
+        val project = CurseForgeSource.parseProject(json, "1.60.1")!!
+
+        assertEquals("console-port", project.slug)
+        assertEquals("console-port", project.title)
+        assertEquals("", project.summary)
+        assertEquals("", project.author)
+        assertEquals("9673432", project.file!!.display)
+        assertEquals("", project.file!!.type)
+        assertEquals("", project.file!!.uploadedAt)
     }
 
     @Test
