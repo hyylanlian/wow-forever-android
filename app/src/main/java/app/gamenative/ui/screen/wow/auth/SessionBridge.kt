@@ -73,9 +73,13 @@ internal class SessionBridge : Closeable {
             }
             output.writeInt(token.size)
             output.write(token)
-            val choice = account?.let { "${it.name}\n${it.region}".toByteArray(Charsets.US_ASCII) }
-            require(choice == null || (choice.size in 3..67 && choice.all { (it.toInt() and 255) in 32..126 })) {
-                "Invalid game account"
+            // The frame is "NAME\nREGION": the separator is not part of either printable field.
+            val choice = account?.let {
+                require(it.name.length in 1..64 && it.name.all { c -> c.code in 32..126 } &&
+                    it.region.length == 2 && it.region.all { c -> c in 'A'..'Z' }) {
+                    "Invalid game account"
+                }
+                "${it.name}\n${it.region}".toByteArray(Charsets.US_ASCII)
             }
             output.writeInt(choice?.size ?: 0)
             if (choice != null) output.write(choice)

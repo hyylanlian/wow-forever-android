@@ -90,6 +90,7 @@ internal object BattleNetBrowserLogin {
         copyFile(config, target, context)
         copyFile(File(gameRoot, WowClientDownloader.BUILD_INFO), target, context)
         copyFile(File(prefix, "drive_c/wow-session/bridge.log"), target, context)
+        copyFile(File(SharedCache.dir(context, "logs"), "last-run.log"), target, context)
         val reported = setOf("portal", "textLocale", "audioLocale", "agentUID", "accountName", "gxApi")
         runCatching { config.readLines() }.getOrNull()?.forEach { line ->
             val key = line.removePrefix("SET ").substringBefore(' ')
@@ -207,8 +208,12 @@ internal object BattleNetBrowserLogin {
             fail(attempt, error.message ?: "Battle.net sign-in failed.")
         } catch (error: Exception) {
             // Never expose provider payloads, redirect URLs, credentials or arbitrary peer output.
-            // A JSON parse detail or exception class is safe and makes the failing step identifiable.
-            val detail = if (error is JSONException) " ${error.message}" else " (${error.javaClass.simpleName})"
+            // A JSON parse detail, our own validation message, or the exception class makes the step identifiable.
+            val detail = when (error) {
+                is JSONException -> " ${error.message}"
+                is IllegalArgumentException -> " ${error.message}"
+                else -> " (${error.javaClass.simpleName})"
+            }
             fail(attempt, "Browser sign-in could not start the game$detail. You can retry.")
         } finally {
             attempt.close()

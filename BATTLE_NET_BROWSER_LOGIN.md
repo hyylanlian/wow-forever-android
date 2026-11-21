@@ -167,7 +167,7 @@ shared cache, readable without root or adb:
   browser-login.log   sign-in stages: region, build, command, challenge host, ticket/token sizes,
                       helper STARTED, failure text. No cookies, URLs or credentials.
   wow-client/         the last run's `_forever_/Logs/*.log` and `WTF/Config.wtf`, `.build.info`,
-                      and the helper's `bridge.log` (overwritten on every launch)
+                      the helper's `bridge.log`, and `last-run.log` (overwritten on every launch)
 ```
 
 `WINEDEBUG=-all,+debugstr` additionally forwards the client's `OutputDebugString` diagnostics to
