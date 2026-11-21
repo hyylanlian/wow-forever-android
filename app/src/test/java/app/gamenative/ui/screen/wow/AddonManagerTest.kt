@@ -419,4 +419,41 @@ class AddonManagerTest {
         assertFalse(File(dir, "Details.toc.disabled").exists())
         assertTrue(AddonManager.groupInstalled(addonsDir, emptyMap()).single().enabled)
     }
+
+    @Test
+    fun enabledFolders_matchesTheTocState() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        File(File(addonsDir, "WeakAuras").apply { mkdirs() }, "WeakAuras.toc")
+            .writeText("## Title: WeakAuras\n")
+        File(File(addonsDir, "Details").apply { mkdirs() }, "Details.toc.disabled")
+            .writeText("## Title: Details\n")
+        File(File(addonsDir, "Library").apply { mkdirs() }, "readme.txt").writeText("no toc")
+        File(File(addonsDir, ".hidden").apply { mkdirs() }, ".hidden.toc").writeText("## Title: hidden\n")
+
+        assertEquals(listOf("WeakAuras"), AddonManager.enabledFolders(addonsDir))
+    }
+
+    @Test
+    fun applyEnabledFolders_isExactAndIdempotent() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        val details = File(addonsDir, "Details").apply { mkdirs() }
+        val weakAuras = File(addonsDir, "WeakAuras").apply { mkdirs() }
+        val bigWigs = File(addonsDir, "BigWigs").apply { mkdirs() }
+        File(details, "Details.toc").writeText("## Title: Details\n")
+        File(weakAuras, "WeakAuras.toc").writeText("## Title: WeakAuras\n")
+        File(bigWigs, "BigWigs.toc.disabled").writeText("## Title: BigWigs\n")
+
+        assertTrue(AddonManager.applyEnabledFolders(addonsDir, setOf("Details")).isEmpty())
+        assertTrue(File(details, "Details.toc").isFile)
+        assertTrue(File(weakAuras, "WeakAuras.toc.disabled").isFile)
+        assertTrue(File(bigWigs, "BigWigs.toc.disabled").isFile)
+        assertEquals(listOf("Details"), AddonManager.enabledFolders(addonsDir))
+
+        assertTrue(AddonManager.applyEnabledFolders(addonsDir, setOf("Details")).isEmpty())
+        assertTrue(File(details, "Details.toc").isFile)
+        assertFalse(File(details, "Details.toc.disabled").exists())
+        assertTrue(File(weakAuras, "WeakAuras.toc.disabled").isFile)
+        assertFalse(File(weakAuras, "WeakAuras.toc").exists())
+        assertTrue(File(bigWigs, "BigWigs.toc.disabled").isFile)
+    }
 }

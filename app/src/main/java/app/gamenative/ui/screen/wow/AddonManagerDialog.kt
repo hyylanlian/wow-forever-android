@@ -72,6 +72,7 @@ private val CHECK_TIME = DateTimeFormatter.ofPattern("HH:mm")
 @Composable
 internal fun AddonManagerDialog(
     addonsDir: File,
+    gameRoot: File,
     gameVersion: String,
     refreshKey: Int,
     onDismiss: () -> Unit,
@@ -98,6 +99,8 @@ internal fun AddonManagerDialog(
     var pendingUninstall by remember { mutableStateOf<AddonManager.InstalledAddon?>(null) }
     var uninstallingKey by remember { mutableStateOf<String?>(null) }
     var togglingKey by remember { mutableStateOf<String?>(null) }
+    // A profile switch moves whole folders; nothing else may touch the add-on files while it runs.
+    var profilesBusy by remember { mutableStateOf(false) }
 
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<WagoAddonSource.SearchResult>>(emptyList()) }
@@ -154,7 +157,7 @@ internal fun AddonManagerDialog(
     }
 
     fun install(slug: String, key: String, source: String, checkAfter: Boolean) {
-        if (busy.containsKey(key)) return
+        if (profilesBusy || busy.containsKey(key)) return
         actionError = null
         busy = busy + (key to 0f)
         scope.launch {
@@ -177,7 +180,7 @@ internal fun AddonManagerDialog(
     }
 
     fun update(slugs: Collection<String>) {
-        if (batchUpdating || busy.isNotEmpty()) return
+        if (profilesBusy || batchUpdating || busy.isNotEmpty()) return
         val wanted = slugs.toSet()
         val targets = installed
             .filter { it.slug?.let { slug -> slug in wanted } == true }
@@ -223,7 +226,7 @@ internal fun AddonManagerDialog(
     }
 
     fun toggle(addon: AddonManager.InstalledAddon, enabled: Boolean) {
-        if (togglingKey != null || uninstallingKey != null || batchUpdating || busy.isNotEmpty()) return
+        if (profilesBusy || togglingKey != null || uninstallingKey != null || batchUpdating || busy.isNotEmpty()) return
         val key = addon.slug ?: addon.folders.first()
         actionError = null
         togglingKey = key
@@ -399,7 +402,7 @@ internal fun AddonManagerDialog(
         )
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!profilesBusy) onDismiss() },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Extension, contentDescription = null, tint = WowGold, modifier = Modifier.size(20.dp))
@@ -413,6 +416,7 @@ internal fun AddonManagerDialog(
                     TabButton("已安装 ${installed.size}", tab == 0) { tab = 0 }
                     TabButton("搜索", tab == 1) { tab = 1 }
                     TabButton("CurseForge", tab == 2) { tab = 2 }
+                    TabButton("配置方案", tab == 3, enabled = !profilesBusy) { tab = 3 }
                 }
                 HorizontalDivider(color = Color(0xFF1E2D44))
                 Spacer(Modifier.height(6.dp))
@@ -426,14 +430,18 @@ internal fun AddonManagerDialog(
                     ) {
                         TextButton(
                             onClick = { scope.launch { loadInstalled(true, force = true) } },
-                            enabled = !loadingInstalled && !checkingUpdates && !batchUpdating && togglingKey == null,
+                            enabled = !loadingInstalled && !checkingUpdates && !batchUpdating && togglingKey == null &&
+                                !profilesBusy,
                         ) { Text("检查更新") }
-                        TextButton(onClick = onImportZip, enabled = !batchUpdating && busy.isEmpty() && togglingKey == null) {
+                        TextButton(
+                            onClick = onImportZip,
+                            enabled = !batchUpdating && busy.isEmpty() && togglingKey == null && !profilesBusy,
+                        ) {
                             Text("从 ZIP 安装")
                         }
                         TextButton(
                             onClick = { scope.launch { loadInstalled(false) } },
-                            enabled = !loadingInstalled && !batchUpdating && togglingKey == null,
+                            enabled = !loadingInstalled && !batchUpdating && togglingKey == null && !profilesBusy,
                         ) { Text("刷新") }
                         Spacer(Modifier.weight(1f))
                         lastCheckedAt?.let { checked ->
@@ -505,6 +513,7 @@ internal fun AddonManagerDialog(
                                         uninstallingKey == null &&
                                         togglingKey == null &&
                                         !batchUpdating &&
+                                        !profilesBusy &&
                                         busy.isEmpty(),
                                     onUpdate = { addon.slug?.let { update(listOf(it)) } },
                                     onToggle = { enabled -> toggle(addon, enabled) },
@@ -518,7 +527,8 @@ internal fun AddonManagerDialog(
                     if (failedUpdates.isNotEmpty() && !batchUpdating) {
                         TextButton(
                             onClick = { update(failedUpdates) },
-                            enabled = busy.isEmpty() && !checkingUpdates && uninstallingKey == null && togglingKey == null,
+                            enabled = busy.isEmpty() && !checkingUpdates && uninstallingKey == null &&
+                                togglingKey == null && !profilesBusy,
                         ) { Text("重试失败（${failedUpdates.size}）") }
                     }
                     if (updateCount > 0) {
@@ -532,7 +542,7 @@ internal fun AddonManagerDialog(
                                 )
                             },
                             enabled = !batchUpdating && busy.isEmpty() && !checkingUpdates &&
-                                uninstallingKey == null && togglingKey == null,
+                                uninstallingKey == null && togglingKey == null && !profilesBusy,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("全部更新（$updateCount）") }
                     }
@@ -718,11 +728,21 @@ internal fun AddonManagerDialog(
                             }
                         }
                     }
+                    3 -> AddonProfilesTab(
+                        gameRoot = gameRoot,
+                        addonsDir = addonsDir,
+                        blocked = batchUpdating ||
+                            busy.isNotEmpty() ||
+                            togglingKey != null ||
+                            uninstallingKey != null,
+                        onBusyChange = { profilesBusy = it },
+                        onProfileApplied = { scope.launch { loadInstalled(false) } },
+                    )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss, enabled = !profilesBusy) { Text("关闭") }
         },
     )
 
@@ -771,8 +791,8 @@ internal fun AddonManagerDialog(
 }
 
 @Composable
-private fun TabButton(text: String, selected: Boolean, onClick: () -> Unit) {
-    TextButton(onClick = onClick) {
+private fun TabButton(text: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = enabled) {
         Text(
             text,
             color = if (selected) WowGold else WowMuted,

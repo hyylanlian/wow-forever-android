@@ -165,6 +165,12 @@ internal object AddonManager {
         val previousRecord = loadRecords(context)[slug]
         val effectiveSource = previousRecord?.source ?: source
         val previous = previousRecord?.folders.orEmpty()
+        // The disk, not the record, decides whether the add-on was disabled: a configuration profile switches
+        // .toc files without touching the prefs, and an update must not re-enable what the profile disabled.
+        val wasEnabled = previous.isEmpty() || previous.any { name ->
+            val dir = File(addonsDir, name)
+            dir.isDirectory && findToc(dir) != null
+        }
         val zip = File(context.cacheDir, "addon-${slug.replace(NON_FILE_CHARS, "_")}.zip")
         try {
             val name: String
@@ -195,7 +201,7 @@ internal object AddonManager {
             onProgress(0.92f)
             val folders = AddonImporter.install(zip, addonsDir)
             deleteFolders(addonsDir, previous.filterNot { it in folders })
-            if (previousRecord?.enabled == false) setEnabled(addonsDir, folders, false)
+            if (!wasEnabled) setEnabled(addonsDir, folders, false)
             remember(
                 context,
                 Record(
@@ -204,7 +210,7 @@ internal object AddonManager {
                     version = version,
                     folders = folders,
                     installedAt = System.currentTimeMillis(),
-                    enabled = previousRecord?.enabled ?: true,
+                    enabled = wasEnabled,
                     source = effectiveSource,
                     fileId = fileId,
                 ),
@@ -373,6 +379,35 @@ internal object AddonManager {
                 ?.all { it } ?: true
             if (!ok) failed += name
         }
+        return failed
+    }
+
+    /** The add-on folders whose .toc is active right now; configuration profiles store this as their allowed set. */
+    internal fun enabledFolders(addonsDir: File): List<String> {
+        if (!addonsDir.isDirectory) return emptyList()
+        return (addonsDir.listFiles() ?: emptyArray())
+            .asSequence()
+            .filter { it.isDirectory && !it.name.startsWith(".") }
+            .filter { findAnyToc(it) != null && findToc(it) != null }
+            .map { it.name }
+            .sorted()
+            .toList()
+    }
+
+    /**
+     * Makes the on-disk .toc state match [enabled] exactly. Folders without any .toc are not add-ons and stay
+     * untouched; returns the folders whose rename failed so the caller can report them.
+     */
+    internal fun applyEnabledFolders(addonsDir: File, enabled: Set<String>): List<String> {
+        if (!addonsDir.isDirectory) return emptyList()
+        val failed = ArrayList<String>()
+        (addonsDir.listFiles() ?: emptyArray())
+            .asSequence()
+            .filter { it.isDirectory && !it.name.startsWith(".") && findAnyToc(it) != null }
+            .forEach { dir ->
+                val want = dir.name in enabled
+                if ((findToc(dir) != null) != want) failed += setEnabled(addonsDir, listOf(dir.name), want)
+            }
         return failed
     }
 

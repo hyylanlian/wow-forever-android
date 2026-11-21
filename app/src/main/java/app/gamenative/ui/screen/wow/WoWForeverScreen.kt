@@ -837,6 +837,7 @@ fun WoWForeverScreen(
     if (showAddonManager) {
         AddonManagerDialog(
             addonsDir = File(gamePath, "$FLAVOR_DIR/Interface/AddOns"),
+            gameRoot = File(gamePath),
             gameVersion = foreverGameVersion,
             refreshKey = addonRefreshKey,
             onDismiss = { showAddonManager = false },
@@ -1412,7 +1413,12 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
     try {
+        // A switch interrupted by a crash is finished here, before anything reads Config.wtf. The order matters:
+        // the profile's Config.wtf is moved in first, then the resolution/region overrides land in that file, and
+        // only then are the sync cvars forced so the local bindings/macros win at login.
+        ConfigProfileStore.recover(gameRoot, File(gameRoot, "$FLAVOR_DIR/Interface/AddOns"))
         ensureGameConfig(gameRoot, screenSize, GameRegion.saved(context))
+        ConfigProfileStore.applyLaunchPolicy(gameRoot)
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
         throw e
