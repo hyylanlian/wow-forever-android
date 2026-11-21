@@ -141,7 +141,7 @@ internal fun AddonManagerDialog(
                 val result = AddonManager.install(context, addonsDir, slug) { progress ->
                     busy = busy + (key to progress)
                 }
-                failedUpdates -= slug
+                failedUpdates = failedUpdates - slug
                 SnackbarManager.show("已安装 ${result.addon.name}（${result.folders.joinToString()}）")
                 loadInstalled(checkAfter)
             } catch (e: CancellationException) {
@@ -178,13 +178,13 @@ internal fun AddonManagerDialog(
                             busy = busy + (slug to progress)
                         }
                         updated++
-                        failedUpdates -= slug
+                        failedUpdates = failedUpdates - slug
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         Timber.e(e, "Add-on update failed: $slug")
                         failed += addon.title
-                        failedUpdates += slug
+                        failedUpdates = failedUpdates + slug
                     } finally {
                         busy = busy - slug
                         batchDone++
@@ -250,7 +250,7 @@ internal fun AddonManagerDialog(
                     }
                 }.thenBy { it.title.lowercase(Locale.ROOT) }
             } else {
-                compareBy { it.title.lowercase(Locale.ROOT) }
+                compareBy<AddonManager.InstalledAddon> { it.title.lowercase(Locale.ROOT) }
             },
         )
 

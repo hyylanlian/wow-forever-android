@@ -155,7 +155,7 @@ internal object AddonManager {
             val semaphore = Semaphore(4)
             slugs.map { slug ->
                 async {
-                    slug to semaphore.withPermit {
+                    val result: Result<WagoAddonSource.Release?> = semaphore.withPermit {
                         try {
                             Result.success(WagoAddonSource.addon(slug).release)
                         } catch (e: CancellationException) {
@@ -165,6 +165,7 @@ internal object AddonManager {
                             Result.failure(e)
                         }
                     }
+                    slug to result
                 }
             }.awaitAll().toMap()
         }
