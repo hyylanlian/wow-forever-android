@@ -1,6 +1,8 @@
 package app.gamenative.ui.screen.wow.auth
 
 import android.content.Context
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,6 +55,19 @@ internal object BattleNetBrowserLogin {
 
     fun setEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("enabled", enabled).apply()
+    }
+
+    /**
+     * Signs out of Battle.net's sign-in page. Its cookies and web storage keep the last account signed in,
+     * so without this the next browser login goes straight back into that account and asks for nothing.
+     * This app's only WebView is the Battle.net page.
+     */
+    fun signOut() {
+        CookieManager.getInstance().apply {
+            removeAllCookies(null)
+            flush()
+        }
+        WebStorage.getInstance().deleteAllData()
     }
 
     /** Runs after Wine prefix initialization. Container executable remains the game for window tracking. */

@@ -717,6 +717,17 @@ fun WoWForeverScreen(
                             browserLogin = !browserLogin
                             BattleNetBrowserLogin.setEnabled(context, browserLogin)
                         }
+                        // The sign-in WebView keeps the account signed in (cookies + DOM storage), so without
+                        // this there is no way to make Battle.net ask for the account again, e.g. after the
+                        // client rejects a stale session.
+                        LinkButton("重新登录", Icons.Default.Delete, enabled = !isLaunching && !isUpdating) {
+                            BattleNetBrowserLogin.signOut()
+                            // Browser login is the only supported sign-in; with it off the client would reuse
+                            // the launch token left in the prefix registry by the previous browser launch.
+                            browserLogin = true
+                            BattleNetBrowserLogin.setEnabled(context, true)
+                            SnackbarManager.show("已清除战网登录状态，并已开启浏览器登录。点击“开始游戏”后需要重新登录。")
+                        }
                         LinkButton(
                             text = if (perfMode == PerfMode.MAX) "性能：满血（散热器）" else "性能：标准",
                             icon = Icons.Default.Speed,
@@ -1356,7 +1367,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         put("fexcoreVersion", "2609-0")
         put("drives", "D:/storage/emulated/0/DownloadE:/data/data/app.wowforever/storageG:${gameRoot.path}")
         put("executablePath", "G:\\$FLAVOR_DIR\\$EXE_NAME")
-        put("execArgs", "-d3d11 -launcherlogin -uid $TARGET_PRODUCT")
+        put("execArgs", "-d3d11")
         put("showFPS", true)
         // Keep running in the background: a suspended client drops its Battle.net connection, e.g. while the
         // player fetches an authenticator code from another app.
