@@ -46,7 +46,6 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.gamenative.BuildConfig
 import app.gamenative.PluviaApp
 import app.gamenative.events.AndroidEvent
-import app.gamenative.utils.Net
 import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
 import app.gamenative.ui.screen.wow.WowClientDownloader.BUILD_INFO
 import app.gamenative.ui.screen.wow.WowClientDownloader.EXE_NAME
@@ -86,8 +85,6 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
-import java.security.MessageDigest
-import java.util.Locale
 
 object WoWLauncherState {
     var shouldAutoLaunch = true
@@ -118,17 +115,6 @@ fun WoWForeverScreen(
     var showDriverDialog by remember { mutableStateOf(false) }
     var showAddonManager by remember { mutableStateOf(false) }
     var addonRefreshKey by remember { mutableStateOf(0) }
-    var remoteDrivers by remember { mutableStateOf<List<DriverCatalog.RemoteDriver>>(emptyList()) }
-    var driverProgress by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
-    var driverError by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(showDriverDialog) {
-        if (showDriverDialog && remoteDrivers.isEmpty()) {
-            driverError = null
-            remoteDrivers = DriverCatalog.fetchRemote(context)
-            if (remoteDrivers.isEmpty()) driverError = "无法连接驱动目录。"
-        }
-    }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
     var statusText by remember { mutableStateOf(READY_STATUS) }
@@ -242,8 +228,15 @@ fun WoWForeverScreen(
         launchJob = scope.launch {
             try {
                 val screenSize = fitScreenSizeToWindow(context, resolution.size)
+                val effective = withContext(Dispatchers.IO) {
+                    DriverCatalog.resolveForLaunch(context, gpu.family)
+                }
+                if (effective.name != driverChoice.name) {
+                    driverChoice = effective
+                    statusText = "所选驱动不可用，已切换为 ${effective.name}"
+                }
                 val containerId = withContext(Dispatchers.IO) {
-                    prepareLaunch(context, File(gamePath), gpu, screenSize, driverChoice) { msg ->
+                    prepareLaunch(context, File(gamePath), gpu, screenSize, effective) { msg ->
                         scope.launch(Dispatchers.Main) { statusText = msg }
                     }
                 }
@@ -742,85 +735,14 @@ fun WoWForeverScreen(
     }
 
     if (showDriverDialog) {
-        AlertDialog(
-            onDismissRequest = { showDriverDialog = false },
-            title = { Text(text = "图形驱动（${gpu.family}）", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = WowGold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DriverCatalog.candidates(gpu.family).forEach { entry ->
-                        val selected = entry.name == driverChoice.name
-                        TextButton(
-                            onClick = {
-                                driverChoice = entry
-                                DriverCatalog.save(context, entry)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-                                Text(
-                                    text = (if (selected) "✓ " else "") + entry.name +
-                                        (if (entry.recommended) "（推荐）" else ""),
-                                    color = if (selected) WowGold else Color(0xFFCBD5E1),
-                                    fontSize = 14.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                )
-                                Text(entry.note, color = Color(0xFF7D8CA3), fontSize = 12.sp)
-                            }
-                        }
-                    }
-                    val online = remoteDrivers.filter {
-                        it.family == gpu.family && DriverCatalog.candidates(gpu.family).none { c -> c.name == it.name }
-                    }
-                    if (online.isNotEmpty()) {
-                        HorizontalDivider(color = Color(0xFF1E2D44))
-                        Text("在线驱动", color = Color(0xFF7D8CA3), fontSize = 12.sp)
-                        online.forEach { d ->
-                            val installed = DriverCatalog.isInstalled(context, d.name)
-                            val progress = driverProgress[d.name]
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        d.name + (if (driverChoice.name == d.name) " ✓" else ""),
-                                        color = if (driverChoice.name == d.name) WowGold else Color(0xFFCBD5E1),
-                                        fontSize = 13.sp,
-                                    )
-                                    Text(
-                                        (if (d.size > 0) String.format(Locale.US, "%.1f MB — ", d.size / 1048576f) else "") + d.note,
-                                        color = Color(0xFF7D8CA3),
-                                        fontSize = 11.sp,
-                                    )
-                                }
-                                if (installed) {
-                                    TextButton(onClick = {
-                                        val entry = DriverEntry(d.name, d.tuDebug, d.note, false)
-                                        driverChoice = entry
-                                        DriverCatalog.save(context, entry)
-                                    }) { Text(if (driverChoice.name == d.name) "已选" else "使用") }
-                                } else {
-                                    TextButton(onClick = {
-                                        scope.launch {
-                                            driverProgress = driverProgress + (d.name to 0f)
-                                            DriverCatalog.download(context, d) { p ->
-                                                driverProgress = driverProgress + (d.name to p)
-                                            }
-                                            driverProgress = driverProgress - d.name
-                                        }
-                                    }) { Text(if (progress != null) "${(progress * 100).toInt()}%" else "下载") }
-                                }
-                            }
-                        }
-                    }
-                    driverError?.let { Text(it, color = WowError, fontSize = 12.sp) }
-                    Text(
-                        "下次启动生效。渲染异常时可随时切回推荐驱动。",
-                        color = Color(0xFF7D8CA3),
-                        fontSize = 12.sp,
-                    )
-                }
+        DriverManagerDialog(
+            family = gpu.family,
+            active = driverChoice,
+            onSelect = { entry ->
+                driverChoice = entry
+                DriverCatalog.save(context, entry)
             },
-            confirmButton = {
-                TextButton(onClick = { showDriverDialog = false }) { Text("关闭") }
-            },
+            onDismiss = { showDriverDialog = false },
         )
     }
 
@@ -1300,8 +1222,6 @@ private class StorageAccessDeniedException(cause: Throwable) : Exception(cause)
 private fun Throwable.isPermissionDenied() =
     message?.let { "EPERM" in it || "Operation not permitted" in it } == true
 
-private const val DEFAULT_DRIVER = "Turnip-WoW-scheduler-test"
-private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
@@ -1386,140 +1306,6 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
         File(gameRoot, "${FLAVOR_DIR}/login.txt").delete()
     }
     return CONTAINER_ID
-}
-
-/** Per-GPU-family Turnip candidates. New builds land here once a driver CI publishes them. */
-private data class DriverEntry(
-    val name: String,
-    val tuDebug: String,
-    val note: String,
-    val recommended: Boolean,
-)
-
-private object DriverCatalog {
-    private val CATALOG = mapOf(
-        "a8xx" to listOf(
-            DriverEntry("Turnip-V32-RP6sched", "nolrz", "Tuned for Adreno 8xx (RP6 scheduler build)", true),
-            DriverEntry("Turnip-WoW-scheduler-test", "noconform", "Adreno 7xx default; try it if the recommended one misrenders", false),
-        ),
-        "a7xx" to listOf(
-            DriverEntry("Turnip-WoW-scheduler-test", "noconform", "Stable default for Adreno 740", true),
-            DriverEntry("Turnip-V32-RP6sched", "nolrz", "Gen8 build; try it if the default one misrenders", false),
-        ),
-    )
-
-    private const val PREFS = "wow_driver"
-    private const val KEY_NAME = "driver"
-    private const val KEY_TU = "driver_tudebug"
-    private const val KEY_NOTE = "driver_note"
-
-    fun candidates(family: String): List<DriverEntry> = CATALOG[family] ?: CATALOG.getValue("a7xx")
-
-    fun current(context: Context, family: String): DriverEntry {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val saved = prefs.getString(KEY_NAME, null)
-        candidates(family).firstOrNull { it.name == saved }?.let { return it }
-        if (saved != null) {
-            // A driver selected from the online catalog: reconstruct it from what was saved.
-            return DriverEntry(saved, prefs.getString(KEY_TU, null) ?: "nolrz", prefs.getString(KEY_NOTE, null) ?: "", false)
-        }
-        return candidates(family).first()
-    }
-
-    fun save(context: Context, entry: DriverEntry) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_NAME, entry.name)
-            .putString(KEY_TU, entry.tuDebug)
-            .putString(KEY_NOTE, entry.note)
-            .apply()
-    }
-
-    // ---- online catalog ----
-
-    data class RemoteDriver(
-        val name: String,
-        val family: String,
-        val tuDebug: String,
-        val note: String,
-        val size: Long,
-        val sha256: String?,
-        val urls: List<String>,
-    )
-
-    private const val CATALOG_RAW = "https://raw.githubusercontent.com/hyylanlian/wow-forever-android/main/drivers.json"
-    private val CATALOG_URLS = listOf(
-        "https://gh-proxy.com/$CATALOG_RAW",
-        "https://ghfast.top/$CATALOG_RAW",
-        CATALOG_RAW,
-    )
-
-    suspend fun fetchRemote(context: Context): List<RemoteDriver> = withContext(Dispatchers.IO) {
-        val dest = File(context.cacheDir, "drivers.json")
-        var last: Exception? = null
-        for (url in CATALOG_URLS) {
-            try {
-                Net.fetchFile(url, dest) {}
-                val array = JSONObject(dest.readText()).getJSONArray("drivers")
-                val list = ArrayList<RemoteDriver>()
-                for (i in 0 until array.length()) {
-                    val o = array.getJSONObject(i)
-                    val urls = ArrayList<String>()
-                    val u = o.optJSONArray("urls")
-                    for (j in 0 until (u?.length() ?: 0)) urls.add(u.getString(j))
-                    list.add(
-                        RemoteDriver(
-                            o.getString("name"),
-                            o.getString("family"),
-                            o.optString("tuDebug", "nolrz"),
-                            o.optString("note", ""),
-                            o.optLong("size", -1L),
-                            if (o.has("sha256")) o.getString("sha256") else null,
-                            urls,
-                        ),
-                    )
-                }
-                return@withContext list
-            } catch (e: Exception) {
-                last = e
-            }
-        }
-        Timber.w(last, "Couldn't fetch the driver catalog")
-        emptyList()
-    }
-
-    fun isInstalled(context: Context, name: String): Boolean =
-        File(context.filesDir, "contents/adrenotools/$name/meta.json").exists()
-
-    /** Downloads, checksums and unpacks one driver. Returns true once it is installed. */
-    suspend fun download(context: Context, driver: RemoteDriver, onProgress: (Float) -> Unit): Boolean =
-        withContext(Dispatchers.IO) {
-            val dir = File(context.filesDir, "contents/adrenotools/${driver.name}")
-            val zip = File(context.cacheDir, "driver-${driver.name}.zip")
-            var last: Exception? = null
-            for (url in driver.urls) {
-                try {
-                    Net.fetchFile(url, zip) { p -> onProgress(p * 0.95f) }
-                    if (driver.sha256 != null && !sha256(zip).equals(driver.sha256, ignoreCase = true)) {
-                        throw IOException("Driver checksum mismatch")
-                    }
-                    dir.deleteRecursively()
-                    dir.mkdirs()
-                    if (!FileUtils.extractZipFromFile(zip, dir)) throw IOException("Driver archive unreadable")
-                    if (!File(dir, "meta.json").exists()) throw IOException("Driver archive has no meta.json")
-                    zip.delete()
-                    onProgress(1f)
-                    return@withContext true
-                } catch (e: Exception) {
-                    last = e
-                    zip.delete()
-                }
-            }
-            Timber.w(last, "Driver download failed: ${driver.name}")
-            false
-        }
-
-    private fun sha256(file: File): String =
-        MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
 }
 
 /** Two container profiles: Standard for passive cooling, Max for playing on a cooler. */
@@ -1676,8 +1462,9 @@ private fun portalOf(root: File) =
         ?: WowClientDownloader.defaultBranch().uppercase()
 
 private fun installBundledComponents(context: Context, onStatus: (String) -> Unit) {
-    installDriver(context, DEFAULT_DRIVER, "turnip-wow-scheduler-test.zip", onStatus)
-    installDriver(context, ADRENO_8XX_DRIVER, "turnip-V32-RP6sched.zip", onStatus)
+    DriverCatalog.BUNDLED_ASSETS.forEach { (name, asset) ->
+        installDriver(context, name, asset, onStatus)
+    }
 
     val protonDir = File(ImageFs.getSharedProtonDir(context), PROTON_VERSION)
     if (!File(protonDir, "profile.json").exists() || !File(protonDir, "bin/wine").exists()) {

@@ -4,6 +4,7 @@ import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -160,5 +161,65 @@ class AddonManagerTest {
 
         assertEquals(records, decoded)
         assertTrue(AddonManager.decodeRecords("not json").isEmpty())
+    }
+
+    @Test
+    fun groupInstalled_mergesFoldersOfOneAddon() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        listOf("Details", "Details_Options").forEach { folder ->
+            val dir = File(addonsDir, folder).apply { mkdirs() }
+            File(dir, "$folder.toc").writeText("## Title: $folder\n## Version: 1.2.3\n")
+        }
+        val record = AddonManager.Record(
+            slug = "details",
+            name = "Details! Damage Meter",
+            version = "Details.20261109",
+            folders = listOf("Details", "Details_Options"),
+            installedAt = 123L,
+        )
+
+        val installed = AddonManager.groupInstalled(addonsDir, mapOf("details" to record))
+
+        assertEquals(1, installed.size)
+        assertEquals("Details! Damage Meter", installed.single().title)
+        assertEquals("Details.20261109", installed.single().version)
+        assertEquals("details", installed.single().slug)
+        assertEquals(listOf("Details", "Details_Options"), installed.single().folders)
+        assertEquals(123L, installed.single().installedAt)
+    }
+
+    @Test
+    fun groupInstalled_keepsManualAddonsAndDropsMissingRecordFolders() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        val bagnon = File(addonsDir, "Bagnon").apply { mkdirs() }
+        File(bagnon, "Bagnon.toc").writeText("## Title: Bagnon\n## Version: 10.2.0\n")
+        val record = AddonManager.Record(
+            slug = "gone-addon",
+            name = "Gone Addon",
+            version = "1.0",
+            folders = listOf("Gone"),
+            installedAt = 1L,
+        )
+
+        val installed = AddonManager.groupInstalled(addonsDir, mapOf("gone-addon" to record))
+
+        assertEquals(1, installed.size)
+        assertNull(installed.single().slug)
+        assertEquals(listOf("Bagnon"), installed.single().folders)
+        assertNull(installed.single().installedAt)
+        assertEquals("10.2.0", installed.single().version)
+    }
+
+    @Test
+    fun deleteFolders_onlyDeletesDirectChildren() {
+        val base = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        val addon = File(base, "A").apply { mkdirs() }
+        val outside = File(tempFolder.root, "outside").apply { writeText("keep") }
+
+        val removed = AddonManager.deleteFolders(base, listOf("A", "../outside"))
+
+        assertEquals(listOf("A"), removed)
+        assertFalse(addon.exists())
+        assertTrue(outside.exists())
     }
 }

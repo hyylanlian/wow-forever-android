@@ -5,7 +5,13 @@ import app.gamenative.utils.Net
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -20,10 +26,11 @@ internal object AddonManager {
     private const val KEY_RECORDS = "records"
 
     data class InstalledAddon(
-        val folder: String,
         val title: String,
         val version: String,
         val slug: String?,
+        val folders: List<String>,
+        val installedAt: Long?,
     )
 
     data class Record(
@@ -46,32 +53,60 @@ internal object AddonManager {
         val unsupported: List<String>,
     )
 
+    data class UninstallResult(val removed: List<String>, val remaining: List<String>)
+
     // A download can contain several top-level add-ons (Details ships its core plus plugins); they share one slug and
     // must be fetched and updated as a unit.
 
     data class Toc(val title: String?, val version: String?, val interfaceVersion: String?)
 
     /** Scans the game's AddOns folder and merges in what the manager remembers about each add-on. */
-    fun installed(context: Context, addonsDir: File): List<InstalledAddon> {
+    fun installed(context: Context, addonsDir: File): List<InstalledAddon> =
+        groupInstalled(addonsDir, loadRecords(context))
+
+    /**
+     * Groups folders by Wago slug. A project like Details installs several top-level add-ons at once; the manager
+     * record ties them together so "installed" shows one row and one update. Folders without a record stay manual.
+     */
+    internal fun groupInstalled(addonsDir: File, records: Map<String, Record>): List<InstalledAddon> {
         if (!addonsDir.isDirectory) return emptyList()
-        val byFolder = HashMap<String, Record>()
-        loadRecords(context).values.forEach { record -> record.folders.forEach { byFolder[it] = record } }
-        return (addonsDir.listFiles() ?: emptyArray())
+        val tocs = HashMap<String, Toc?>()
+        (addonsDir.listFiles() ?: emptyArray())
             .asSequence()
             .filter { it.isDirectory && !it.name.startsWith(".") }
-            .mapNotNull { dir ->
-                val toc = findToc(dir) ?: return@mapNotNull null
-                val meta = readToc(toc)
-                val record = byFolder[dir.name]
-                InstalledAddon(
-                    folder = dir.name,
-                    title = meta?.title?.takeIf { it.isNotBlank() } ?: dir.name,
-                    version = record?.version ?: meta?.version.orEmpty(),
-                    slug = record?.slug,
-                )
+            .forEach { dir ->
+                val toc = findToc(dir) ?: return@forEach
+                tocs[dir.name] = readToc(toc)
             }
-            .sortedBy { it.title.lowercase(Locale.ROOT) }
-            .toList()
+        if (tocs.isEmpty()) return emptyList()
+
+        val covered = HashSet<String>()
+        val grouped = ArrayList<InstalledAddon>()
+        records.values.forEach { record ->
+            val folders = record.folders.filter { it in tocs }.distinct()
+            if (folders.isEmpty()) return@forEach
+            covered += folders
+            val primary = folders.first()
+            val meta = tocs[primary]
+            grouped += InstalledAddon(
+                title = record.name.ifBlank { meta?.title?.takeIf { it.isNotBlank() } ?: primary },
+                version = record.version.ifBlank { meta?.version.orEmpty() },
+                slug = record.slug,
+                folders = folders,
+                installedAt = record.installedAt,
+            )
+        }
+        tocs.forEach { (folder, meta) ->
+            if (folder in covered) return@forEach
+            grouped += InstalledAddon(
+                title = meta?.title?.takeIf { it.isNotBlank() } ?: folder,
+                version = meta?.version.orEmpty(),
+                slug = null,
+                folders = listOf(folder),
+                installedAt = null,
+            )
+        }
+        return grouped.sortedBy { it.title.lowercase(Locale.ROOT) }
     }
 
     /** Downloads the latest release for [slug], replaces its folders and remembers the new version. */
@@ -81,6 +116,8 @@ internal object AddonManager {
         slug: String,
         onProgress: (Float) -> Unit = {},
     ): InstallResult = withContext(Dispatchers.IO) {
+        // Read before the download so an interrupted update never loses the folders it still has to clean up.
+        val previous = loadRecords(context)[slug]?.folders.orEmpty()
         val addon = WagoAddonSource.addon(slug)
         val release = addon.release
             ?: throw IOException("${addon.name.ifBlank { slug }} 还没有 WoW Forever 版本")
@@ -89,14 +126,14 @@ internal object AddonManager {
             Net.fetchFile(release.downloadUrl, zip) { progress -> onProgress(progress * 0.9f) }
             onProgress(0.92f)
             val folders = AddonImporter.install(zip, addonsDir)
-            val previous = loadRecords(context)[slug]?.folders.orEmpty()
+            deleteFolders(addonsDir, previous.filterNot { it in folders })
             remember(
                 context,
                 Record(
                     slug = slug,
                     name = addon.name.ifBlank { slug },
                     version = release.version,
-                    folders = (previous + folders).distinct(),
+                    folders = folders,
                     installedAt = System.currentTimeMillis(),
                 ),
             )
@@ -112,37 +149,80 @@ internal object AddonManager {
      * unreachable project doesn't hide the rest; add-ons without a Forever release are reported separately.
      */
     suspend fun checkUpdates(context: Context, addons: List<InstalledAddon>): UpdateCheck = withContext(Dispatchers.IO) {
-        val byFolder = HashMap<String, Record>()
-        loadRecords(context).values.forEach { record -> record.folders.forEach { byFolder[it] = record } }
+        val records = loadRecords(context)
+        val slugs = addons.mapNotNull { it.slug }.distinct()
+        val releases = coroutineScope {
+            val semaphore = Semaphore(4)
+            slugs.map { slug ->
+                async {
+                    slug to semaphore.withPermit {
+                        try {
+                            Result.success(WagoAddonSource.addon(slug).release)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Timber.w(e, "Couldn't check updates for $slug")
+                            Result.failure(e)
+                        }
+                    }
+                }
+            }.awaitAll().toMap()
+        }
+
         val updates = LinkedHashMap<String, WagoAddonSource.Release>()
         val failures = LinkedHashSet<String>()
         val unsupported = LinkedHashSet<String>()
-        // One Wago project can own several installed folders; fetch it once and apply the answer to all of them.
-        val releases = HashMap<String, WagoAddonSource.Release?>()
-        val failed = HashSet<String>()
         addons.forEach { addon ->
             val slug = addon.slug ?: return@forEach
-            if (slug !in releases && slug !in failed) {
-                try {
-                    releases[slug] = WagoAddonSource.addon(slug).release
-                } catch (e: Exception) {
-                    Timber.w(e, "Couldn't check updates for $slug")
-                    failed += slug
-                }
-            }
-            if (slug in failed) {
+            val result = releases[slug] ?: return@forEach
+            if (result.isFailure) {
                 failures += addon.title
                 return@forEach
             }
-            val release = releases[slug]
+            val release = result.getOrNull()
             if (release == null) {
                 unsupported += addon.title
             } else {
-                val record = byFolder[addon.folder]
+                val record = records[slug]
                 if (record == null || record.version != release.version) updates[slug] = release
             }
         }
         UpdateCheck(updates, failures.toList(), unsupported.toList())
+    }
+
+    /** Deletes every folder named in [names] that is a direct child of [base], refusing path traversal. */
+    internal fun deleteFolders(base: File, names: Iterable<String>): List<String> {
+        val root = base.canonicalFile
+        val removed = ArrayList<String>()
+        names.distinct().forEach { name ->
+            val dir = runCatching { File(root, name).canonicalFile }.getOrNull()
+            if (dir == null || dir.parentFile != root || !dir.isDirectory) {
+                Timber.w("Skipping add-on folder outside $root: $name")
+                return@forEach
+            }
+            if (dir.deleteRecursively()) {
+                removed += name
+            } else {
+                Timber.w("Couldn't delete add-on folder ${dir.path}")
+            }
+        }
+        return removed
+    }
+
+    /** Removes an installed add-on's folders. SavedVariables under WTF stay untouched. */
+    suspend fun uninstall(
+        context: Context,
+        addonsDir: File,
+        addon: InstalledAddon,
+    ): UninstallResult = withContext(Dispatchers.IO) {
+        val removed = deleteFolders(addonsDir, addon.folders)
+        val root = addonsDir.canonicalFile
+        val remaining = addon.folders.filter { name ->
+            val dir = runCatching { File(root, name).canonicalFile }.getOrNull()
+            dir != null && dir.parentFile == root && dir.exists()
+        }
+        if (remaining.isEmpty() && addon.slug != null) forget(context, addon.slug)
+        UninstallResult(removed, remaining)
     }
 
     /** The newest .toc at the top level: add-ons keep bundled libraries in subfolders. */
@@ -187,6 +267,16 @@ internal object AddonManager {
     private fun remember(context: Context, record: Record) {
         val records = loadRecords(context)
         records[record.slug] = record
+        writeRecords(context, records)
+    }
+
+    @Synchronized
+    private fun forget(context: Context, slug: String) {
+        val records = loadRecords(context)
+        if (records.remove(slug) != null) writeRecords(context, records)
+    }
+
+    private fun writeRecords(context: Context, records: Map<String, Record>) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_RECORDS, encodeRecords(records))
             .apply()

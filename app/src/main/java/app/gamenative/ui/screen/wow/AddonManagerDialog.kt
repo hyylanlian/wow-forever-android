@@ -45,6 +45,11 @@ import app.gamenative.ui.theme.WowMuted
 import app.gamenative.ui.theme.WowSubtle
 import app.gamenative.ui.util.SnackbarManager
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,6 +57,7 @@ import timber.log.Timber
 
 private val TITLE_COLOR = Color(0xFFE2E8F0)
 private val SUCCESS = Color(0xFF4CAF50)
+private val CHECK_TIME = DateTimeFormatter.ofPattern("HH:mm")
 
 /**
  * Add-on browser and updater. Installs replace the add-on's folder in place through [AddonImporter], so a running
@@ -76,6 +82,14 @@ internal fun AddonManagerDialog(
     var checkWarnings by remember { mutableStateOf<List<String>>(emptyList()) }
     var busy by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
     var actionError by remember { mutableStateOf<String?>(null) }
+    var installedFilter by remember { mutableStateOf("") }
+    var sortByStatus by remember { mutableStateOf(false) }
+    var failedUpdates by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var batchDone by remember { mutableStateOf(0) }
+    var batchTotal by remember { mutableStateOf(0) }
+    var lastCheckedAt by remember { mutableStateOf<Long?>(null) }
+    var pendingUninstall by remember { mutableStateOf<AddonManager.InstalledAddon?>(null) }
+    var uninstallingKey by remember { mutableStateOf<String?>(null) }
 
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<WagoAddonSource.SearchResult>>(emptyList()) }
@@ -89,21 +103,27 @@ internal fun AddonManagerDialog(
         checkWarnings = emptyList()
         loadingInstalled = true
         installed = withContext(Dispatchers.IO) { AddonManager.installed(context, addonsDir) }
+        failedUpdates = failedUpdates.intersect(installed.mapNotNull { it.slug }.toSet())
         loadingInstalled = false
-        if (check && installed.any { it.slug != null }) {
-            checkingUpdates = true
-            try {
-                val result = AddonManager.checkUpdates(context, installed)
-                updates = result.updates
-                checkWarnings = buildList {
-                    if (result.failures.isNotEmpty()) add("${result.failures.size} 个插件检查失败：${result.failures.joinToString()}")
-                    if (result.unsupported.isNotEmpty()) add("没有 Forever 版本：${result.unsupported.joinToString()}")
+        if (check) {
+            if (installed.any { it.slug != null }) {
+                checkingUpdates = true
+                try {
+                    val result = AddonManager.checkUpdates(context, installed)
+                    updates = result.updates
+                    lastCheckedAt = System.currentTimeMillis()
+                    checkWarnings = buildList {
+                        if (result.failures.isNotEmpty()) add("${result.failures.size} 个插件检查失败：${result.failures.joinToString()}")
+                        if (result.unsupported.isNotEmpty()) add("没有 Forever 版本：${result.unsupported.joinToString()}")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Add-on update check failed")
+                    checkWarnings = listOf("检查更新失败：${e.message}")
+                } finally {
+                    checkingUpdates = false
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "Add-on update check failed")
-                checkWarnings = listOf("检查更新失败：${e.message}")
-            } finally {
-                checkingUpdates = false
+            } else {
+                updates = emptyMap()
             }
         }
     }
@@ -121,8 +141,11 @@ internal fun AddonManagerDialog(
                 val result = AddonManager.install(context, addonsDir, slug) { progress ->
                     busy = busy + (key to progress)
                 }
+                failedUpdates -= slug
                 SnackbarManager.show("已安装 ${result.addon.name}（${result.folders.joinToString()}）")
                 loadInstalled(checkAfter)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.e(e, "Add-on install failed: $slug")
                 actionError = "安装失败：${e.message}"
@@ -132,34 +155,45 @@ internal fun AddonManagerDialog(
         }
     }
 
-    fun updateAll() {
-        if (batchUpdating) return
+    fun update(slugs: Collection<String>) {
+        if (batchUpdating || busy.isNotEmpty()) return
+        val wanted = slugs.toSet()
         val targets = installed
-            .filter { it.slug != null && updates.containsKey(it.slug) }
+            .filter { it.slug?.let { slug -> slug in wanted } == true }
             .distinctBy { it.slug }
         if (targets.isEmpty()) return
         actionError = null
         scope.launch {
             batchUpdating = true
+            batchDone = 0
+            batchTotal = targets.size
             var updated = 0
             val failed = ArrayList<String>()
-            targets.forEach { addon ->
-                val slug = addon.slug ?: return@forEach
-                busy = busy + (slug to 0f)
-                try {
-                    AddonManager.install(context, addonsDir, slug) { progress ->
-                        busy = busy + (slug to progress)
+            try {
+                targets.forEach { addon ->
+                    val slug = addon.slug ?: return@forEach
+                    busy = busy + (slug to 0f)
+                    try {
+                        AddonManager.install(context, addonsDir, slug) { progress ->
+                            busy = busy + (slug to progress)
+                        }
+                        updated++
+                        failedUpdates -= slug
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.e(e, "Add-on update failed: $slug")
+                        failed += addon.title
+                        failedUpdates += slug
+                    } finally {
+                        busy = busy - slug
+                        batchDone++
                     }
-                    updated++
-                } catch (e: Exception) {
-                    Timber.e(e, "Add-on update failed: $slug")
-                    failed += addon.title
-                } finally {
-                    busy = busy - slug
                 }
+            } finally {
+                batchUpdating = false
             }
             loadInstalled(true)
-            batchUpdating = false
             SnackbarManager.show(
                 if (failed.isEmpty()) "已更新 $updated 个插件"
                 else "已更新 $updated 个插件，${failed.size} 个失败：${failed.joinToString()}",
@@ -195,7 +229,30 @@ internal fun AddonManagerDialog(
     }
 
     val bySlug = installed.mapNotNull { addon -> addon.slug?.let { it to addon } }.toMap()
-    val updateCount = installed.mapNotNull { it.slug }.distinct().count { updates.containsKey(it) }
+    val updateCount = installed.count { it.slug?.let { slug -> updates.containsKey(slug) } == true }
+    val filter = installedFilter.trim().lowercase(Locale.ROOT)
+    val visibleInstalled = installed
+        .filter { addon ->
+            filter.isEmpty() ||
+                addon.title.lowercase(Locale.ROOT).contains(filter) ||
+                addon.folders.any { it.lowercase(Locale.ROOT).contains(filter) } ||
+                addon.slug?.lowercase(Locale.ROOT)?.contains(filter) == true
+        }
+        .sortedWith(
+            if (sortByStatus) {
+                compareBy<AddonManager.InstalledAddon> { addon ->
+                    val slug = addon.slug
+                    when {
+                        slug != null && updates.containsKey(slug) -> 0
+                        slug != null && slug in failedUpdates -> 1
+                        slug == null -> 3
+                        else -> 2
+                    }
+                }.thenBy { it.title.lowercase(Locale.ROOT) }
+            } else {
+                compareBy { it.title.lowercase(Locale.ROOT) }
+            },
+        )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -232,12 +289,46 @@ internal fun AddonManagerDialog(
                             onClick = { scope.launch { loadInstalled(false) } },
                             enabled = !loadingInstalled && !batchUpdating,
                         ) { Text("刷新") }
+                        Spacer(Modifier.weight(1f))
+                        lastCheckedAt?.let { checked ->
+                            Text(
+                                "检查于 ${Instant.ofEpochMilli(checked).atZone(ZoneId.systemDefault()).format(CHECK_TIME)}",
+                                color = WowSubtle,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        OutlinedTextField(
+                            value = installedFilter,
+                            onValueChange = { installedFilter = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            placeholder = { Text("筛选已安装", fontSize = 12.sp) },
+                            textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 12.sp),
+                        )
+                        TextButton(onClick = { sortByStatus = !sortByStatus }) {
+                            Text(if (sortByStatus) "排序：状态" else "排序：名称", fontSize = 12.sp)
+                        }
                     }
 
                     if (checkingUpdates || batchUpdating) {
                         LinearProgressIndicator(
                             color = WowGold,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        )
+                    }
+                    if (batchUpdating) {
+                        Text(
+                            "正在更新 $batchDone/$batchTotal…",
+                            color = WowMuted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(bottom = 2.dp),
                         )
                     }
 
@@ -248,26 +339,50 @@ internal fun AddonManagerDialog(
                             color = WowSubtle,
                             fontSize = 12.sp,
                         )
+                        visibleInstalled.isEmpty() -> Text(
+                            "没有匹配的插件。",
+                            color = WowSubtle,
+                            fontSize = 12.sp,
+                        )
                         else -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
-                            items(installed, key = { it.folder }) { addon ->
+                            items(visibleInstalled, key = { it.slug ?: it.folders.first() }) { addon ->
+                                val key = addon.slug ?: addon.folders.first()
+                                val progress = addon.slug?.let { busy[it] }
                                 InstalledRow(
                                     addon = addon,
                                     update = addon.slug?.let { updates[it] },
-                                    progress = addon.slug?.let { busy[it] },
-                                    onUpdate = {
-                                        addon.slug?.let { install(it, it, checkAfter = true) }
-                                    },
+                                    progress = progress,
+                                    failed = addon.slug?.let { it in failedUpdates } == true,
+                                    uninstalling = uninstallingKey == key,
+                                    actionsEnabled = progress == null &&
+                                        uninstallingKey == null &&
+                                        !batchUpdating &&
+                                        busy.isEmpty(),
+                                    onUpdate = { addon.slug?.let { update(listOf(it)) } },
+                                    onUninstall = { pendingUninstall = addon },
                                 )
                                 HorizontalDivider(color = Color(0xFF1E2D44))
                             }
                         }
                     }
 
+                    if (failedUpdates.isNotEmpty() && !batchUpdating) {
+                        TextButton(
+                            onClick = { update(failedUpdates) },
+                            enabled = busy.isEmpty() && !checkingUpdates && uninstallingKey == null,
+                        ) { Text("重试失败（${failedUpdates.size}）") }
+                    }
                     if (updateCount > 0) {
                         Spacer(Modifier.height(6.dp))
                         Button(
-                            onClick = ::updateAll,
-                            enabled = !batchUpdating && busy.isEmpty() && !checkingUpdates,
+                            onClick = {
+                                update(
+                                    installed.mapNotNull { it.slug }
+                                        .filter { updates.containsKey(it) }
+                                        .distinct(),
+                                )
+                            },
+                            enabled = !batchUpdating && busy.isEmpty() && !checkingUpdates && uninstallingKey == null,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("全部更新（$updateCount）") }
                     }
@@ -353,6 +468,49 @@ internal fun AddonManagerDialog(
             TextButton(onClick = onDismiss) { Text("关闭") }
         },
     )
+
+    pendingUninstall?.let { addon ->
+        AlertDialog(
+            onDismissRequest = { pendingUninstall = null },
+            title = { Text("卸载 ${addon.title}？") },
+            text = {
+                Text("将删除 ${addon.folders.joinToString()}。角色配置（SavedVariables）会保留。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val key = addon.slug ?: addon.folders.first()
+                        pendingUninstall = null
+                        actionError = null
+                        uninstallingKey = key
+                        scope.launch {
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    AddonManager.uninstall(context, addonsDir, addon)
+                                }
+                                if (result.remaining.isNotEmpty()) {
+                                    actionError = "部分文件无法删除：${result.remaining.joinToString()}"
+                                } else {
+                                    SnackbarManager.show("已卸载 ${addon.title}")
+                                    loadInstalled(false)
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Timber.e(e, "Add-on uninstall failed: ${addon.title}")
+                                actionError = "卸载失败：${e.message}"
+                            } finally {
+                                uninstallingKey = null
+                            }
+                        }
+                    },
+                ) { Text("卸载", color = WowError) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUninstall = null }) { Text("取消") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -385,10 +543,14 @@ private fun InstalledRow(
     addon: AddonManager.InstalledAddon,
     update: WagoAddonSource.Release?,
     progress: Float?,
+    failed: Boolean,
+    uninstalling: Boolean,
+    actionsEnabled: Boolean,
     onUpdate: () -> Unit,
+    onUninstall: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(
                     addon.title,
@@ -398,29 +560,43 @@ private fun InstalledRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val installedAt = addon.installedAt?.let { " · 安装于 ${installedDate(it)}" }.orEmpty()
                 Text(
-                    "${addon.folder} · ${if (addon.version.isBlank()) "版本未知" else "v${addon.version}"}",
+                    "${addon.folders.joinToString(", ")} · " +
+                        "${if (addon.version.isBlank()) "版本未知" else "v${addon.version}"} · " +
+                        "${if (addon.slug == null) "手动" else "Wago"}$installedAt",
                     color = WowSubtle,
                     fontSize = 11.sp,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                update?.let {
+                    val patch = it.patch?.takeIf { value -> value.isNotBlank() }
+                        ?.let { value -> "（支持补丁 $value）" }
+                        .orEmpty()
+                    Text(
+                        "${addon.version.ifBlank { "当前版本" }} → ${it.version}$patch",
+                        color = WowMuted,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            when {
-                progress != null -> Text("${(progress * 100).toInt()}%", color = WowGold, fontSize = 12.sp)
-                update != null -> TextButton(onClick = onUpdate) { Text("更新") }
-                addon.slug == null -> Text("手动", color = WowMuted, fontSize = 11.sp)
-                else -> Text("已最新", color = SUCCESS, fontSize = 11.sp)
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
+                when {
+                    uninstalling -> Text("卸载中…", color = WowMuted, fontSize = 11.sp)
+                    progress != null -> Text("${(progress * 100).toInt()}%", color = WowGold, fontSize = 12.sp)
+                    failed -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("更新失败", color = WowError, fontSize = 11.sp)
+                        TextButton(onClick = onUpdate, enabled = actionsEnabled) { Text("重试") }
+                    }
+                    update != null -> TextButton(onClick = onUpdate, enabled = actionsEnabled) { Text("更新") }
+                    addon.slug == null -> Text("手动", color = WowMuted, fontSize = 11.sp)
+                    else -> Text("已最新", color = SUCCESS, fontSize = 11.sp)
+                }
+                TextButton(onClick = onUninstall, enabled = actionsEnabled) { Text("卸载") }
             }
-        }
-        update?.let {
-            Text(
-                "${addon.version.ifBlank { "当前版本" }} → ${it.version}",
-                color = WowMuted,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -443,9 +619,12 @@ private fun SearchRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val installedLabel = installed?.let {
+                    " · 已安装 ${if (it.version.isBlank()) "版本未知" else "v${it.version}"}"
+                }.orEmpty()
                 Text(
                     listOf(result.author, result.updated).filter { it.isNotBlank() }
-                        .joinToString(" · ").ifBlank { result.slug },
+                        .joinToString(" · ").ifBlank { result.slug } + installedLabel,
                     color = WowSubtle,
                     fontSize = 11.sp,
                     maxLines = 1,
@@ -471,3 +650,6 @@ private fun SearchRow(
         }
     }
 }
+
+private fun installedDate(ms: Long): String =
+    Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate().toString()
