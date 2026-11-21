@@ -20,6 +20,7 @@ internal data class DriverEntry(
     val note: String,
     val recommended: Boolean,
     val bundled: Boolean,
+    val turnip: Boolean = true,
 )
 
 internal data class RemoteDriver(
@@ -30,6 +31,7 @@ internal data class RemoteDriver(
     val size: Long,
     val sha256: String?,
     val urls: List<String>,
+    val turnip: Boolean = true,
 )
 
 internal data class RemoteCatalog(val version: Int, val updatedAt: String, val drivers: List<RemoteDriver>)
@@ -47,6 +49,7 @@ internal data class DownloadedDriver(
     val note: String,
     val sha256: String?,
     val at: Long,
+    val turnip: Boolean = true,
 )
 
 internal data class DriverMeta(val name: String, val version: String, val libraryName: String)
@@ -62,6 +65,7 @@ internal data class DriverOption(
     val remote: RemoteDriver?,
     val downloaded: DownloadedDriver?,
     val active: Boolean,
+    val turnip: Boolean = true,
 )
 
 /**
@@ -117,6 +121,7 @@ internal object DriverCatalog {
     private const val KEY_NAME = "driver"
     private const val KEY_TU = "driver_tudebug"
     private const val KEY_NOTE = "driver_note"
+    private const val KEY_TURNIP = "driver_turnip"
     private const val KEY_DOWNLOADS = "downloads"
 
     private const val CATALOG_RAW =
@@ -128,6 +133,7 @@ internal object DriverCatalog {
     )
 
     internal const val CATALOG_TTL_MS = 12 * 60 * 60 * 1000L
+    internal const val MIN_CATALOG_VERSION = 2
     private const val STAGING_SUFFIX = ".staging"
     private const val BACKUP_SUFFIX = ".backup"
     private val SAFE_NAME = Regex("^[A-Za-z0-9._-]{1,64}$")
@@ -144,6 +150,7 @@ internal object DriverCatalog {
         val saved = prefs.getString(KEY_NAME, null)
         val savedTu = prefs.getString(KEY_TU, null)
         val savedNote = prefs.getString(KEY_NOTE, null)
+        val savedTurnip = if (prefs.contains(KEY_TURNIP)) prefs.getBoolean(KEY_TURNIP, true) else null
         if (saved != null) {
             val candidate = candidates(family).firstOrNull { it.name == saved }
             if (candidate != null) {
@@ -151,6 +158,7 @@ internal object DriverCatalog {
                 return candidate.copy(
                     tuDebug = savedTu ?: candidate.tuDebug,
                     note = savedNote ?: candidate.note,
+                    turnip = savedTurnip ?: candidate.turnip,
                 )
             }
             return DriverEntry(
@@ -160,6 +168,7 @@ internal object DriverCatalog {
                 note = savedNote ?: "",
                 recommended = false,
                 bundled = isBundled(saved),
+                turnip = savedTurnip ?: true,
             )
         }
         return candidates(family).first()
@@ -170,6 +179,7 @@ internal object DriverCatalog {
             .putString(KEY_NAME, entry.name)
             .putString(KEY_TU, entry.tuDebug)
             .putString(KEY_NOTE, entry.note)
+            .putBoolean(KEY_TURNIP, entry.turnip)
             .apply()
     }
 
@@ -229,6 +239,7 @@ internal object DriverCatalog {
                 note = json.optString("note", ""),
                 sha256 = json.optString("sha256", "").takeIf { it.isNotBlank() && it != "null" },
                 at = json.optLong("at", 0L),
+                turnip = json.optBoolean("turnip", true),
             )
         }
         return result
@@ -242,6 +253,7 @@ internal object DriverCatalog {
             note = driver.note,
             sha256 = driver.sha256,
             at = System.currentTimeMillis(),
+            turnip = driver.turnip,
         )
         writeDownloads(context, all)
     }
@@ -261,7 +273,8 @@ internal object DriverCatalog {
                     .put("tuDebug", driver.tuDebug)
                     .put("note", driver.note)
                     .put("sha256", driver.sha256)
-                    .put("at", driver.at),
+                    .put("at", driver.at)
+                    .put("turnip", driver.turnip),
             )
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -377,6 +390,7 @@ internal object DriverCatalog {
                 size = o.optLong("size", -1L),
                 sha256 = sha,
                 urls = urls,
+                turnip = o.optBoolean("turnip", true),
             )
         }
         return RemoteCatalog(
@@ -559,6 +573,13 @@ internal object DriverCatalog {
                 remote = remoteEntry,
                 downloaded = download,
                 active = isActive,
+                turnip = when {
+                    isActive -> active.turnip
+                    download != null -> download.turnip
+                    bundledEntry != null -> bundledEntry.turnip
+                    remoteEntry != null -> remoteEntry.turnip
+                    else -> true
+                },
             )
         }.sortedWith(
             compareBy<DriverOption> {

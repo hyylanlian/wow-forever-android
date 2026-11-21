@@ -22,6 +22,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -90,6 +91,7 @@ internal fun AddonManagerDialog(
     var lastCheckedAt by remember { mutableStateOf<Long?>(null) }
     var pendingUninstall by remember { mutableStateOf<AddonManager.InstalledAddon?>(null) }
     var uninstallingKey by remember { mutableStateOf<String?>(null) }
+    var togglingKey by remember { mutableStateOf<String?>(null) }
 
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<WagoAddonSource.SearchResult>>(emptyList()) }
@@ -201,6 +203,31 @@ internal fun AddonManagerDialog(
         }
     }
 
+    fun toggle(addon: AddonManager.InstalledAddon, enabled: Boolean) {
+        if (togglingKey != null || uninstallingKey != null || batchUpdating || busy.isNotEmpty()) return
+        val key = addon.slug ?: addon.folders.first()
+        actionError = null
+        togglingKey = key
+        scope.launch {
+            try {
+                val failed = withContext(Dispatchers.IO) {
+                    AddonManager.setEnabled(addonsDir, addon, enabled)
+                }
+                if (failed.isNotEmpty()) {
+                    actionError = "无法${if (enabled) "启用" else "禁用"}：${failed.joinToString()}"
+                }
+                loadInstalled(false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Add-on toggle failed: ${addon.title}")
+                actionError = "切换失败：${e.message}"
+            } finally {
+                togglingKey = null
+            }
+        }
+    }
+
     fun search(page: Int) {
         val text = query.trim()
         if (text.isEmpty() || searching) return
@@ -280,14 +307,14 @@ internal fun AddonManagerDialog(
                     ) {
                         TextButton(
                             onClick = { scope.launch { loadInstalled(true) } },
-                            enabled = !loadingInstalled && !checkingUpdates && !batchUpdating,
+                            enabled = !loadingInstalled && !checkingUpdates && !batchUpdating && togglingKey == null,
                         ) { Text("检查更新") }
-                        TextButton(onClick = onImportZip, enabled = !batchUpdating && busy.isEmpty()) {
+                        TextButton(onClick = onImportZip, enabled = !batchUpdating && busy.isEmpty() && togglingKey == null) {
                             Text("从 ZIP 安装")
                         }
                         TextButton(
                             onClick = { scope.launch { loadInstalled(false) } },
-                            enabled = !loadingInstalled && !batchUpdating,
+                            enabled = !loadingInstalled && !batchUpdating && togglingKey == null,
                         ) { Text("刷新") }
                         Spacer(Modifier.weight(1f))
                         lastCheckedAt?.let { checked ->
@@ -354,11 +381,14 @@ internal fun AddonManagerDialog(
                                     progress = progress,
                                     failed = addon.slug?.let { it in failedUpdates } == true,
                                     uninstalling = uninstallingKey == key,
+                                    toggling = togglingKey == key,
                                     actionsEnabled = progress == null &&
                                         uninstallingKey == null &&
+                                        togglingKey == null &&
                                         !batchUpdating &&
                                         busy.isEmpty(),
                                     onUpdate = { addon.slug?.let { update(listOf(it)) } },
+                                    onToggle = { enabled -> toggle(addon, enabled) },
                                     onUninstall = { pendingUninstall = addon },
                                 )
                                 HorizontalDivider(color = Color(0xFF1E2D44))
@@ -369,7 +399,7 @@ internal fun AddonManagerDialog(
                     if (failedUpdates.isNotEmpty() && !batchUpdating) {
                         TextButton(
                             onClick = { update(failedUpdates) },
-                            enabled = busy.isEmpty() && !checkingUpdates && uninstallingKey == null,
+                            enabled = busy.isEmpty() && !checkingUpdates && uninstallingKey == null && togglingKey == null,
                         ) { Text("重试失败（${failedUpdates.size}）") }
                     }
                     if (updateCount > 0) {
@@ -382,7 +412,8 @@ internal fun AddonManagerDialog(
                                         .distinct(),
                                 )
                             },
-                            enabled = !batchUpdating && busy.isEmpty() && !checkingUpdates && uninstallingKey == null,
+                            enabled = !batchUpdating && busy.isEmpty() && !checkingUpdates &&
+                                uninstallingKey == null && togglingKey == null,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("全部更新（$updateCount）") }
                     }
@@ -545,8 +576,10 @@ private fun InstalledRow(
     progress: Float?,
     failed: Boolean,
     uninstalling: Boolean,
+    toggling: Boolean,
     actionsEnabled: Boolean,
     onUpdate: () -> Unit,
+    onToggle: (Boolean) -> Unit,
     onUninstall: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -561,10 +594,11 @@ private fun InstalledRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 val installedAt = addon.installedAt?.let { " · 安装于 ${installedDate(it)}" }.orEmpty()
+                val disabled = if (addon.enabled) "" else " · 已禁用"
                 Text(
                     "${addon.folders.joinToString(", ")} · " +
                         "${if (addon.version.isBlank()) "版本未知" else "v${addon.version}"} · " +
-                        "${if (addon.slug == null) "手动" else "Wago"}$installedAt",
+                        "${if (addon.slug == null) "手动" else "Wago"}$installedAt$disabled",
                     color = WowSubtle,
                     fontSize = 11.sp,
                     maxLines = 2,
@@ -594,6 +628,21 @@ private fun InstalledRow(
                     update != null -> TextButton(onClick = onUpdate, enabled = actionsEnabled) { Text("更新") }
                     addon.slug == null -> Text("手动", color = WowMuted, fontSize = 11.sp)
                     else -> Text("已最新", color = SUCCESS, fontSize = 11.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (toggling) {
+                        CircularProgressIndicator(
+                            color = WowGold,
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Switch(
+                        checked = addon.enabled,
+                        onCheckedChange = onToggle,
+                        enabled = actionsEnabled,
+                    )
                 }
                 TextButton(onClick = onUninstall, enabled = actionsEnabled) { Text("卸载") }
             }

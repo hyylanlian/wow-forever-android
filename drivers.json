@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updatedAt": "2026-11-20",
+  "version": 2,
+  "updatedAt": "2026-11-21",
   "drivers": [
     {
       "name": "Turnip-V32-RP6sched",
@@ -26,6 +26,52 @@
         "https://gh-proxy.com/https://github.com/jaredgei/wow-forever-android/releases/download/components-v1/turnip-wow-scheduler-test.zip",
         "https://ghfast.top/https://github.com/jaredgei/wow-forever-android/releases/download/components-v1/turnip-wow-scheduler-test.zip",
         "https://github.com/jaredgei/wow-forever-android/releases/download/components-v1/turnip-wow-scheduler-test.zip"
+      ]
+    },
+    {
+      "name": "8eGen5-842.8",
+      "family": "a8xx",
+      "tuDebug": "nolrz",
+      "note": "Snapdragon 8 Elite Gen 5 vendor driver (Vulkan 1.4.304)",
+      "size": 13253379,
+      "sha256": "74a45c48b7458adfef03e27131c43ff8769269f7868f820d52a63bcc33498519",
+      "turnip": false,
+      "urls": [
+        "https://downloads.gamenative.app/drivers/8eGen5-842.8.zip"
+      ]
+    },
+    {
+      "name": "qcom-849",
+      "family": "a8xx",
+      "tuDebug": "nolrz",
+      "note": "Qualcomm 849 vendor driver (Vulkan 1.4.304)",
+      "size": 13279106,
+      "sha256": "46c99b6ac603223c6d58e25abf4929c3ef0769cf9d16886b97e5267215a16bb6",
+      "turnip": false,
+      "urls": [
+        "https://downloads.gamenative.app/drivers/qcom-849.zip"
+      ]
+    },
+    {
+      "name": "turnip_v26.0.0_R8_b12",
+      "family": "a8xx",
+      "tuDebug": "nolrz",
+      "note": "Turnip Gen8 v26.0.0 R8 b12",
+      "size": 3586259,
+      "sha256": "d9784136bc4eed0a549c303fbe4183481248e6a726bb955100df50fac34019b3",
+      "urls": [
+        "https://downloads.gamenative.app/drivers/turnip_v26.0.0_R8_b12.zip"
+      ]
+    },
+    {
+      "name": "a8xx-gen8-V22",
+      "family": "a8xx",
+      "tuDebug": "nolrz",
+      "note": "Turnip Gen8 v22 (GameNative build)",
+      "size": 2826274,
+      "sha256": "fc0cf616904a94f122c568bca1b47a9782f0af1700f23aeab88e84e4e403a28e",
+      "urls": [
+        "https://downloads.gamenative.app/drivers/a8xx-gen8-V22.zip"
       ]
     }
   ]

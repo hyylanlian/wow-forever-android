@@ -64,7 +64,16 @@ class DriverCatalogTest {
                 {"name": "../evil", "family": "a8xx", "urls": ["https://example.com/x.zip"]},
                 {"name": "a/b", "family": "a8xx", "urls": ["https://example.com/x.zip"]},
                 {"name": "HttpOnly", "family": "a8xx", "urls": ["http://example.com/x.zip"]},
-                {"name": "BadSha", "family": "a8xx", "sha256": "abc", "urls": ["https://example.com/x.zip"]}
+                {"name": "BadSha", "family": "a8xx", "sha256": "abc", "urls": ["https://example.com/x.zip"]},
+                {
+                  "name": "Vendor",
+                  "family": "a8xx",
+                  "tuDebug": "nolrz",
+                  "note": "vendor",
+                  "size": 99,
+                  "turnip": false,
+                  "urls": ["https://example.com/vendor.zip"]
+                }
               ]
             }
         """.trimIndent()
@@ -74,14 +83,16 @@ class DriverCatalogTest {
         assertNotNull(catalog)
         assertEquals(1, catalog!!.version)
         assertEquals("2026-11-20", catalog.updatedAt)
-        assertEquals(1, catalog.drivers.size)
-        val driver = catalog.drivers.single()
+        assertEquals(2, catalog.drivers.size)
+        val driver = catalog.drivers.first()
         assertEquals("Turnip-Test", driver.name)
         assertEquals("a8xx", driver.family)
         assertEquals("fast", driver.note)
         assertEquals(1234L, driver.size)
         assertEquals(validSha, driver.sha256)
         assertEquals(listOf("https://example.com/driver.zip"), driver.urls)
+        assertTrue(driver.turnip)
+        assertFalse(catalog.drivers.last().turnip)
     }
 
     @Test

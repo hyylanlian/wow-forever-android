@@ -31,6 +31,7 @@ internal object AddonManager {
         val slug: String?,
         val folders: List<String>,
         val installedAt: Long?,
+        val enabled: Boolean = true,
     )
 
     data class Record(
@@ -39,6 +40,7 @@ internal object AddonManager {
         val version: String,
         val folders: List<String>,
         val installedAt: Long,
+        val enabled: Boolean = true,
     )
 
     data class InstallResult(
@@ -64,49 +66,80 @@ internal object AddonManager {
     fun installed(context: Context, addonsDir: File): List<InstalledAddon> =
         groupInstalled(addonsDir, loadRecords(context))
 
+    private data class FolderState(val toc: Toc?, val enabled: Boolean)
+
     /**
-     * Groups folders by Wago slug. A project like Details installs several top-level add-ons at once; the manager
-     * record ties them together so "installed" shows one row and one update. Folders without a record stay manual.
+     * Groups folders by Wago slug, and groups unrecorded ZIP installs by their shared folder prefix (Polestar,
+     * Details, DBM...). Folders without a shared prefix stay single manual rows.
      */
     internal fun groupInstalled(addonsDir: File, records: Map<String, Record>): List<InstalledAddon> {
         if (!addonsDir.isDirectory) return emptyList()
-        val tocs = HashMap<String, Toc?>()
+        val folders = LinkedHashMap<String, FolderState>()
         (addonsDir.listFiles() ?: emptyArray())
             .asSequence()
             .filter { it.isDirectory && !it.name.startsWith(".") }
             .forEach { dir ->
-                val toc = findToc(dir) ?: return@forEach
-                tocs[dir.name] = readToc(toc)
+                val toc = findAnyToc(dir) ?: return@forEach
+                folders[dir.name] = FolderState(readToc(toc), findToc(dir) != null)
             }
-        if (tocs.isEmpty()) return emptyList()
+        if (folders.isEmpty()) return emptyList()
 
         val covered = HashSet<String>()
+        val recordFolders = LinkedHashMap<String, MutableList<String>>()
+        val recordByStem = HashMap<String, String>()
+        records.values.forEach { record ->
+            val present = record.folders.filter { it in folders }.distinct()
+            recordFolders[record.slug] = present.toMutableList()
+            covered += present
+            present.firstOrNull()?.let { folder ->
+                recordByStem.putIfAbsent(manualGroupKey(folder), record.slug)
+            }
+        }
+
+        val manualGroups = LinkedHashMap<String, MutableList<String>>()
+        folders.keys.filterNot { it in covered }.sorted().forEach { folder ->
+            val stem = manualGroupKey(folder)
+            val recordSlug = recordByStem[stem]
+            if (recordSlug != null) {
+                recordFolders.getValue(recordSlug) += folder
+            } else {
+                manualGroups.getOrPut(stem) { ArrayList() } += folder
+            }
+        }
+
         val grouped = ArrayList<InstalledAddon>()
         records.values.forEach { record ->
-            val folders = record.folders.filter { it in tocs }.distinct()
-            if (folders.isEmpty()) return@forEach
-            covered += folders
-            val primary = folders.first()
-            val meta = tocs[primary]
+            val present = recordFolders[record.slug].orEmpty().distinct()
+            if (present.isEmpty()) return@forEach
             grouped += InstalledAddon(
-                title = record.name.ifBlank { meta?.title?.takeIf { it.isNotBlank() } ?: primary },
-                version = record.version.ifBlank { meta?.version.orEmpty() },
+                title = record.name.ifBlank { folders[present.first()]?.toc?.title ?: present.first() },
+                version = record.version.ifBlank { folders[present.first()]?.toc?.version.orEmpty() },
                 slug = record.slug,
-                folders = folders,
+                folders = present,
                 installedAt = record.installedAt,
+                enabled = present.any { folders[it]?.enabled == true },
             )
         }
-        tocs.forEach { (folder, meta) ->
-            if (folder in covered) return@forEach
+        manualGroups.forEach { (stem, names) ->
+            val present = names.sorted()
+            val primary = present.first()
+            val meta = folders[primary]?.toc
             grouped += InstalledAddon(
-                title = meta?.title?.takeIf { it.isNotBlank() } ?: folder,
+                title = meta?.title?.takeIf { it.isNotBlank() } ?: stem,
                 version = meta?.version.orEmpty(),
                 slug = null,
-                folders = listOf(folder),
+                folders = present,
                 installedAt = null,
+                enabled = present.any { folders[it]?.enabled == true },
             )
         }
         return grouped.sortedBy { it.title.lowercase(Locale.ROOT) }
+    }
+
+    private fun manualGroupKey(folder: String): String {
+        val lower = folder.lowercase(Locale.ROOT)
+        val cut = lower.indexOfFirst { it == '_' || it == '-' || it == ' ' }
+        return if (cut >= 3) lower.substring(0, cut) else lower
     }
 
     /** Downloads the latest release for [slug], replaces its folders and remembers the new version. */
@@ -117,7 +150,8 @@ internal object AddonManager {
         onProgress: (Float) -> Unit = {},
     ): InstallResult = withContext(Dispatchers.IO) {
         // Read before the download so an interrupted update never loses the folders it still has to clean up.
-        val previous = loadRecords(context)[slug]?.folders.orEmpty()
+        val previousRecord = loadRecords(context)[slug]
+        val previous = previousRecord?.folders.orEmpty()
         val addon = WagoAddonSource.addon(slug)
         val release = addon.release
             ?: throw IOException("${addon.name.ifBlank { slug }} 还没有 WoW Forever 版本")
@@ -127,6 +161,7 @@ internal object AddonManager {
             onProgress(0.92f)
             val folders = AddonImporter.install(zip, addonsDir)
             deleteFolders(addonsDir, previous.filterNot { it in folders })
+            if (previousRecord?.enabled == false) setEnabled(addonsDir, folders, false)
             remember(
                 context,
                 Record(
@@ -135,6 +170,7 @@ internal object AddonManager {
                     version = release.version,
                     folders = folders,
                     installedAt = System.currentTimeMillis(),
+                    enabled = previousRecord?.enabled ?: true,
                 ),
             )
             onProgress(1f)
@@ -226,6 +262,48 @@ internal object AddonManager {
         UninstallResult(removed, remaining)
     }
 
+    /** Enables or disables every top-level .toc in the add-on's folders by renaming it to .toc.disabled. */
+    fun setEnabled(addonsDir: File, addon: InstalledAddon, enabled: Boolean): List<String> =
+        setEnabled(addonsDir, addon.folders, enabled)
+
+    internal fun setEnabled(addonsDir: File, folders: Iterable<String>, enabled: Boolean): List<String> {
+        val root = addonsDir.canonicalFile
+        val failed = ArrayList<String>()
+        folders.distinct().forEach { name ->
+            val dir = runCatching { File(root, name).canonicalFile }.getOrNull()
+            if (dir == null || dir.parentFile != root || !dir.isDirectory) {
+                failed += name
+                return@forEach
+            }
+            val ok = dir.listFiles()
+                ?.filter { it.isFile }
+                ?.map { file -> if (enabled) enableToc(file) else disableToc(file) }
+                ?.all { it } ?: true
+            if (!ok) failed += name
+        }
+        return failed
+    }
+
+    private fun disableToc(file: File): Boolean {
+        if (!file.extension.equals("toc", ignoreCase = true)) return true
+        val dest = File(file.parentFile, file.name + ".disabled")
+        if (dest.exists() && !dest.delete()) {
+            Timber.w("Couldn't replace ${dest.path}")
+            return false
+        }
+        return file.renameTo(dest)
+    }
+
+    private fun enableToc(file: File): Boolean {
+        if (!file.name.endsWith(".toc.disabled", ignoreCase = true)) return true
+        val dest = File(file.parentFile, file.name.dropLast(".disabled".length))
+        if (dest.exists() && !dest.delete()) {
+            Timber.w("Couldn't replace ${dest.path}")
+            return false
+        }
+        return file.renameTo(dest)
+    }
+
     /** The newest .toc at the top level: add-ons keep bundled libraries in subfolders. */
     internal fun findToc(dir: File): File? {
         val tocs = dir.listFiles()
@@ -234,6 +312,26 @@ internal object AddonManager {
         return tocs.firstOrNull { it.nameWithoutExtension.equals(dir.name, ignoreCase = true) }
             ?: tocs.firstOrNull { it.nameWithoutExtension.substringBefore('_').equals(dir.name, ignoreCase = true) }
             ?: tocs.minByOrNull { it.name.length }
+    }
+
+    /** Finds a .toc that this manager disabled by renaming it to .toc.disabled. */
+    internal fun findAnyToc(dir: File): File? {
+        findToc(dir)?.let { return it }
+        val tocs = dir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".toc.disabled", ignoreCase = true) }
+            .orEmpty()
+        return tocs.firstOrNull { tocBaseName(it.name).equals(dir.name, ignoreCase = true) }
+            ?: tocs.firstOrNull {
+                tocBaseName(it.name).substringBefore('_').equals(dir.name, ignoreCase = true)
+            }
+            ?: tocs.minByOrNull { it.name.length }
+    }
+
+    private fun tocBaseName(name: String): String {
+        var base = name
+        if (base.endsWith(".disabled", ignoreCase = true)) base = base.dropLast(".disabled".length)
+        if (base.endsWith(".toc", ignoreCase = true)) base = base.dropLast(".toc".length)
+        return base
     }
 
     internal fun readToc(file: File): Toc? {
@@ -300,6 +398,7 @@ internal object AddonManager {
                 version = json.optString("version"),
                 folders = folders,
                 installedAt = json.optLong("installedAt"),
+                enabled = json.optBoolean("enabled", true),
             )
         }
         return records
@@ -316,7 +415,8 @@ internal object AddonManager {
                     .put("name", record.name)
                     .put("version", record.version)
                     .put("folders", folders)
-                    .put("installedAt", record.installedAt),
+                    .put("installedAt", record.installedAt)
+                    .put("enabled", record.enabled),
             )
         }
         return root.toString()

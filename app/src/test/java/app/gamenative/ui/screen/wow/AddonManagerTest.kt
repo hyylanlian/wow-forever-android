@@ -154,6 +154,7 @@ class AddonManagerTest {
                 version = "Details.20261109.15410.172",
                 folders = listOf("Details"),
                 installedAt = 1_700_000_000_000,
+                enabled = false,
             ),
         )
 
@@ -221,5 +222,60 @@ class AddonManagerTest {
         assertEquals(listOf("A"), removed)
         assertFalse(addon.exists())
         assertTrue(outside.exists())
+    }
+
+    @Test
+    fun groupInstalled_mergesUnrecordedPolestarFolders() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        val titles = mapOf(
+            "Polestar" to "Polestar",
+            "Polestar_Arcade" to "Polestar Arcade",
+            "Polestar_zhCN" to "Polestar - Chinese (simplified)",
+        )
+        titles.forEach { (folder, title) ->
+            val dir = File(addonsDir, folder).apply { mkdirs() }
+            File(dir, "$folder.toc").writeText("## Title: $title\n## Version: 1.0\n")
+        }
+
+        val installed = AddonManager.groupInstalled(addonsDir, emptyMap())
+
+        assertEquals(1, installed.size)
+        assertEquals("Polestar", installed.single().title)
+        assertEquals(listOf("Polestar", "Polestar_Arcade", "Polestar_zhCN"), installed.single().folders)
+        assertTrue(installed.single().enabled)
+    }
+
+    @Test
+    fun groupInstalled_attachesUnrecordedFoldersToWagoRecord() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        listOf("Polestar", "Polestar_Arcade").forEach { folder ->
+            val dir = File(addonsDir, folder).apply { mkdirs() }
+            File(dir, "$folder.toc").writeText("## Title: $folder\n## Version: 1.0\n")
+        }
+        val record = AddonManager.Record("polestar", "Polestar", "1.0", listOf("Polestar"), 1L)
+
+        val installed = AddonManager.groupInstalled(addonsDir, mapOf("polestar" to record))
+
+        assertEquals(1, installed.size)
+        assertEquals("polestar", installed.single().slug)
+        assertEquals(listOf("Polestar", "Polestar_Arcade"), installed.single().folders)
+    }
+
+    @Test
+    fun setEnabled_renamesTocsAndKeepsTheAddonVisible() {
+        val addonsDir = File(tempFolder.root, "AddOns").apply { mkdirs() }
+        val dir = File(addonsDir, "Details").apply { mkdirs() }
+        File(dir, "Details.toc").writeText("## Title: Details\n## Version: 1.0\n")
+
+        assertTrue(AddonManager.setEnabled(addonsDir, listOf("Details"), false).isEmpty())
+        assertFalse(File(dir, "Details.toc").exists())
+        assertTrue(File(dir, "Details.toc.disabled").isFile)
+        assertEquals("Details", AddonManager.groupInstalled(addonsDir, emptyMap()).single().title)
+        assertFalse(AddonManager.groupInstalled(addonsDir, emptyMap()).single().enabled)
+
+        assertTrue(AddonManager.setEnabled(addonsDir, listOf("Details"), true).isEmpty())
+        assertTrue(File(dir, "Details.toc").isFile)
+        assertFalse(File(dir, "Details.toc.disabled").exists())
+        assertTrue(AddonManager.groupInstalled(addonsDir, emptyMap()).single().enabled)
     }
 }
