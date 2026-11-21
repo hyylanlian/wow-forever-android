@@ -208,31 +208,6 @@ fun WoWForeverScreen(
     fun installedVersion(): String? = versionStatus?.localVersion
         ?: WowClientDownloader.readBuildInfo(File(gamePath, BUILD_INFO))?.get("Version")
 
-    /** Reinstalls the pinned build's client, for an install that has moved past it. */
-    fun performRollback(version: String) {
-        if (isUpdating || isLaunching) return
-        isUpdating = true
-        errorMessage = null
-        scope.launch {
-            try {
-                withContext(Dispatchers.IO) {
-                    WowClientDownloader.installKnownBuild(File(gamePath), version) { msg ->
-                        scope.launch(Dispatchers.Main) { updateStatusText = msg }
-                    }
-                }
-                isUpdating = false
-                SnackbarManager.show("已回退到 $version")
-                checkFiles()
-                checkVersionStatus()
-            } catch (e: Exception) {
-                Timber.e(e, "Rollback to $version failed")
-                if (e.isPermissionDenied()) denyStorageAccess()
-                errorMessage = "回退失败: ${e.message}"
-                isUpdating = false
-            }
-        }
-    }
-
     fun checkFiles(): Boolean {
         files = GamePath.status(context, gamePath)
         if (files.isWrongGame) {
@@ -403,6 +378,31 @@ fun WoWForeverScreen(
                 Timber.e(e, failure)
                 if (e.isPermissionDenied()) denyStorageAccess()
                 errorMessage = "$failure: ${e.message}"
+                isUpdating = false
+            }
+        }
+    }
+
+    /** Reinstalls the pinned build's client, for an install that has moved past it. */
+    fun performRollback(version: String) {
+        if (isUpdating || isLaunching) return
+        isUpdating = true
+        errorMessage = null
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    WowClientDownloader.installKnownBuild(File(gamePath), version) { msg ->
+                        scope.launch(Dispatchers.Main) { updateStatusText = msg }
+                    }
+                }
+                isUpdating = false
+                SnackbarManager.show("已回退到 $version")
+                checkFiles()
+                checkVersionStatus()
+            } catch (e: Exception) {
+                Timber.e(e, "Rollback to $version failed")
+                if (e.isPermissionDenied()) denyStorageAccess()
+                errorMessage = "回退失败: ${e.message}"
                 isUpdating = false
             }
         }
