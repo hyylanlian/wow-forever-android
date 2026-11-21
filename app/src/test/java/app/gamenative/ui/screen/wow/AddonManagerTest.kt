@@ -241,34 +241,24 @@ class AddonManagerTest {
             ),
         )
 
-        AddonManager.takeover(
-            records,
-            AddonManager.Record(
-                slug = "details",
-                name = "Details! Damage Meter",
-                version = "3.0",
-                folders = listOf("Details"),
-                installedAt = 3L,
-                source = AddonManager.SOURCE_CURSEFORGE,
-                fileId = 9675720L,
-            ),
+        val incoming = AddonManager.Record(
+            slug = "details",
+            name = "Details! Damage Meter",
+            version = "3.0",
+            folders = listOf("Details"),
+            installedAt = 3L,
+            source = AddonManager.SOURCE_CURSEFORGE,
+            fileId = 9675720L,
         )
+        AddonManager.takeover(records, incoming)
+        records[incoming.slug] = incoming
 
         assertEquals(listOf("Details_Options"), records["wago-details"]?.folders)
         assertEquals(listOf("Bagnon"), records["other"]?.folders)
 
-        AddonManager.takeover(
-            records,
-            AddonManager.Record(
-                slug = "details",
-                name = "Details! Damage Meter",
-                version = "3.0",
-                folders = listOf("Details", "Details_Options", "Bagnon"),
-                installedAt = 3L,
-                source = AddonManager.SOURCE_CURSEFORGE,
-                fileId = 9675720L,
-            ),
-        )
+        val wider = incoming.copy(folders = listOf("Details", "Details_Options", "Bagnon"))
+        AddonManager.takeover(records, wider)
+        records[wider.slug] = wider
 
         assertEquals(setOf("details"), records.keys)
     }
