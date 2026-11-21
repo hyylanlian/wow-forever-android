@@ -62,7 +62,7 @@ class GameConfigTest {
     fun cnRegion_newConfig_usesChineseLanguageAndPortal() {
         val root = install("cn")
         ensureGameConfig(root, "1920x1080", GameRegion.CN)
-        assertEquals(listOf("SET portal \"cn\""), portals(root))
+        assertEquals(listOf("SET portal \"CN\""), portals(root))
         assertEquals(listOf("SET textLocale \"zhCN\"", "SET audioLocale \"zhCN\""), languages(root))
     }
 

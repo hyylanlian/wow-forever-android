@@ -29,7 +29,7 @@ class WinComponentDownloaderTest {
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         PrefManager.init(context)
-        cacheDir = File(context.filesDir, WinComponentDownloader.WINCOMPONENTS_CACHE_DIR)
+        cacheDir = File(app.gamenative.utils.SharedCache.root(context), WinComponentDownloader.WINCOMPONENTS_CACHE_DIR)
 
         // Clean up any existing cache
         WinComponentDownloader.clearCache(context)

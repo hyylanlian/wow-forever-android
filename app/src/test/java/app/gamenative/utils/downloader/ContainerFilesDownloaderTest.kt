@@ -34,7 +34,7 @@ class ContainerFilesDownloaderTest {
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         PrefManager.init(context)
-        cacheDir = File(context.filesDir, ContainerFilesDownloader.CONTAINER_FILES_CACHE_DIR)
+        cacheDir = File(app.gamenative.utils.SharedCache.root(context), ContainerFilesDownloader.CONTAINER_FILES_CACHE_DIR)
 
         // Clean up any existing cache
         ContainerFilesDownloader.clearCache(context)

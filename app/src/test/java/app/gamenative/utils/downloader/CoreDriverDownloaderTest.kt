@@ -29,7 +29,7 @@ class CoreDriverDownloaderTest {
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         PrefManager.init(context)
-        cacheDir = File(context.filesDir, CoreDriverDownloader.CORE_DRIVERS_CACHE_DIR)
+        cacheDir = File(app.gamenative.utils.SharedCache.root(context), CoreDriverDownloader.CORE_DRIVERS_CACHE_DIR)
 
         // Clean up any existing cache
         CoreDriverDownloader.clearCache(context)

@@ -1614,7 +1614,7 @@ internal fun ensureGameConfig(root: File, screenSize: String, region: GameRegion
         flavorInfo.writeText("Product Flavor!STRING:0\n$TARGET_PRODUCT\n")
     }
     // The CN client ships Chinese text and audio only; an enUS config asks for data the CN build doesn't carry.
-    val portal = region?.cdnRegion ?: portalOf(root)
+    val portal = region?.name ?: portalOf(root)
     val china = region == GameRegion.CN || (region == null && portal.equals("cn", ignoreCase = true))
     val defaults = if (china) {
         CONFIG_DEFAULTS + mapOf("textLocale" to "\"zhCN\"", "audioLocale" to "\"zhCN\"")

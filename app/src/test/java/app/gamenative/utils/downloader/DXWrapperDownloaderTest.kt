@@ -29,7 +29,7 @@ class DXWrapperDownloaderTest {
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         PrefManager.init(context)
-        cacheDir = File(context.filesDir, DXWrapperDownloader.DXWRAPPER_CACHE_DIR)
+        cacheDir = File(app.gamenative.utils.SharedCache.root(context), DXWrapperDownloader.DXWRAPPER_CACHE_DIR)
 
         // Clean up any existing cache
         DXWrapperDownloader.clearCache(context)
