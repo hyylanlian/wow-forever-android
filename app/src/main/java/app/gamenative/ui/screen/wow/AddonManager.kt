@@ -178,7 +178,8 @@ internal object AddonManager {
                     name = project.title
                     version = file.display
                     fileId = file.id
-                    recordSlug = project.slug
+                    // cfwidget resolves project ids even when its CurseForge slug is stale (Polestar: "polestar").
+                    recordSlug = project.id.toString()
                 }
                 else -> {
                     val addon = WagoAddonSource.addon(slug)

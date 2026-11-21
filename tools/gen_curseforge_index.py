@@ -21,7 +21,7 @@ SLUGS = [
     "vuhdo", "auctionator", "tomtom", "gathermate2", "handynotes",
     "pawn", "simulationcraft", "plater-nameplates", "masque", "quartz",
     "tellmewhen", "xperl", "skillet", "selljunk", "scrap",
-    "leatrix-plus", "sexymap", "totemtimers",
+    "leatrix-plus", "sexymap", "totemtimers", "polestar-guides",
 ]
 OUT = Path(__file__).resolve().parents[1] / "app/src/main/assets/curseforge-index.json"
 USER_AGENT = "WoWForeverAndroid/2.4 (+https://github.com/hyylanlian/wow-forever-android)"

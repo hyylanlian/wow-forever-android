@@ -278,7 +278,7 @@ internal fun AddonManagerDialog(
         val addon = WagoAddonSource.addon(slug)
         val ref = CurseForgeSource.parseInput(addon.website)
         if (ref != null && ref.path.startsWith("wow/addons/")) {
-            CfRow(ref.path.removePrefix("wow/addons/"), addon.name, addon.summary, "Wago 匹配")
+            CfRow(0L, ref.path.removePrefix("wow/addons/"), addon.name, addon.summary, "Wago 匹配")
         } else {
             null
         }
@@ -291,7 +291,7 @@ internal fun AddonManagerDialog(
 
     fun projectRow(project: CurseForgeSource.Project): CfRow {
         val suffix = if (project.file == null) " · 没有 Forever 版本" else " · ${project.file.display}"
-        return CfRow(project.slug, project.title, project.summary + suffix, "链接")
+        return CfRow(project.id, project.slug, project.title, project.summary + suffix, "链接")
     }
 
     fun searchCurseForge() {
@@ -318,7 +318,7 @@ internal fun AddonManagerDialog(
                                 entry.slug.contains(q) ||
                                 entry.summary.lowercase(Locale.ROOT).contains(q)
                         }
-                        .map { CfRow(it.slug, it.title, it.summary, "CurseForge 目录") }
+                        .map { CfRow(it.id, it.slug, it.title, it.summary, "CurseForge 目录") }
                     // Wago detail pages often link a CurseForge project; those projects need no index entry.
                     val mapped = try {
                         val results = withContext(Dispatchers.IO) { WagoAddonSource.search(text, 1) }.results
@@ -372,7 +372,7 @@ internal fun AddonManagerDialog(
     val forgeBySlug = installed
         .filter { it.slug != null && it.source == AddonManager.SOURCE_CURSEFORGE }
         .associateBy { it.slug!! }
-    val indexRows = cfIndex.map { CfRow(it.slug, it.title, it.summary, "CurseForge 目录") }
+    val indexRows = cfIndex.map { CfRow(it.id, it.slug, it.title, it.summary, "CurseForge 目录") }
     val updateCount = installed.count { it.slug?.let { slug -> updates.containsKey(slug) } == true }
     val filter = installedFilter.trim().lowercase(Locale.ROOT)
     val visibleInstalled = installed
@@ -669,16 +669,17 @@ internal fun AddonManagerDialog(
                                 cfQuery.isBlank() && cfIndexLoaded -> LazyColumn(
                                     modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
                                 ) {
-                                    items(indexRows, key = { it.slug }) { row ->
+                                    items(indexRows, key = { it.ref }) { row ->
                                         CurseForgeRow(
                                             row = row,
-                                            installed = forgeBySlug[row.slug],
-                                            updateAvailable = updates.containsKey(row.slug),
-                                            progress = busy[row.slug],
+                                            installed = forgeBySlug[row.ref] ?: forgeBySlug[row.slug],
+                                            updateAvailable = updates.containsKey(row.ref) ||
+                                                updates.containsKey(row.slug),
+                                            progress = busy[row.ref],
                                             onInstall = {
                                                 install(
-                                                    row.slug,
-                                                    row.slug,
+                                                    row.ref,
+                                                    row.ref,
                                                     AddonManager.SOURCE_CURSEFORGE,
                                                     checkAfter = true,
                                                 )
@@ -695,16 +696,17 @@ internal fun AddonManagerDialog(
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
                                 else -> LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
-                                    items(cfRows, key = { it.slug }) { row ->
+                                    items(cfRows, key = { it.ref }) { row ->
                                         CurseForgeRow(
                                             row = row,
-                                            installed = forgeBySlug[row.slug],
-                                            updateAvailable = updates.containsKey(row.slug),
-                                            progress = busy[row.slug],
+                                            installed = forgeBySlug[row.ref] ?: forgeBySlug[row.slug],
+                                            updateAvailable = updates.containsKey(row.ref) ||
+                                                updates.containsKey(row.slug),
+                                            progress = busy[row.ref],
                                             onInstall = {
                                                 install(
-                                                    row.slug,
-                                                    row.slug,
+                                                    row.ref,
+                                                    row.ref,
                                                     AddonManager.SOURCE_CURSEFORGE,
                                                     checkAfter = true,
                                                 )
@@ -930,11 +932,15 @@ private fun SearchRow(
 }
 
 private data class CfRow(
+    val id: Long,
     val slug: String,
     val title: String,
     val summary: String,
     val origin: String,
-)
+) {
+    /** What to install and how to match records: cfwidget ids survive stale CurseForge slugs. */
+    val ref: String get() = if (id > 0L) id.toString() else slug
+}
 
 @Composable
 private fun CurseForgeRow(

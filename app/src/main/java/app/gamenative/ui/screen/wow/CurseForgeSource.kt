@@ -159,7 +159,7 @@ internal object CurseForgeSource {
                 val numeric = PROJECT_ID.matches(ref.path.substringAfterLast('/'))
                 throw IOException(
                     if (numeric) "CurseForge 没有项目：$input（若这是文件 ID，请粘贴完整文件链接）"
-                    else "CurseForge 没有项目：$input",
+                    else "CurseForge 没有项目：$input（镜像可能换了 slug，请改用项目 ID 或名称搜索）",
                 )
             }
             if (!response.isSuccessful) throw IOException("CurseForge HTTP ${response.code}")
