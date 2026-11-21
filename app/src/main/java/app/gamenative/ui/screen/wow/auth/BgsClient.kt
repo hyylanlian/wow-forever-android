@@ -28,6 +28,12 @@ class BgsClient internal constructor(
 ) : Closeable {
     constructor(host: String, platform: String = "Wn64") : this(TlsBgsTransport(host), platform)
 
+    /** One WoW account under the signed-in Battle.net login, named as the game knows it. */
+    data class GameAccount(val name: String, val region: String)
+
+    /** The game credential for this launch, with the accounts the game can be started for. */
+    data class Login(val token: ByteArray, val accounts: List<GameAccount>)
+
     private enum class State { NEW, CONNECTED, CHALLENGE, AUTHENTICATED, FINISHED, CLOSED }
     @Volatile private var state = State.NEW
     private var token = 0L
@@ -97,12 +103,12 @@ class BgsClient internal constructor(
      * On a newly connected client call [webChallenge] again, then pass the browser's ST ticket here.
      * The ticket is consumed once. The returned credential is for this game launch only.
      */
-    fun verifyAndGenerateGameToken(ticket: ByteArray): ByteArray = safe {
+    fun verifyAndGenerateGameToken(ticket: ByteArray): Login = safe {
         checkState(State.CHALLENGE)
         if (ticket.isEmpty() || ticket.size > 2048) throw BgsException("The browser sign-in ticket is invalid.")
         call(AUTHENTICATION_SERVICE, 2, BgsProtocol.bytes(1, ticket))
         var deadline = afterSeconds(30)
-        var authenticated = false
+        var record: BgsProtocol.Message? = null
         for (index in 0 until MAX_NOTIFICATIONS) {
             val packet = notification(deadline)
             if (isQueue(packet)) {
@@ -113,19 +119,49 @@ class BgsClient internal constructor(
             if (packet.method != 1L) protocolError()
             val status = packet.body.integer(1)
             if (status != 0L) reject(status)
-            val record = packet.body.bytes(2)
-            if (record == null || record.isEmpty()) protocolError()
-            BgsProtocol.parse(record)
-            authenticated = true
+            val bytes = packet.body.bytes(2)
+            if (bytes == null || bytes.isEmpty()) protocolError()
+            record = BgsProtocol.parse(bytes)
             break
         }
-        if (!authenticated) protocolError()
+        val logon = record ?: protocolError()
         state = State.AUTHENTICATED
         val credential = call(AUTHENTICATION_SERVICE, 3, BgsProtocol.integer(1, WOW_TITLE)).bytes(1)
         if (credential == null || credential.isEmpty() || credential.size > 2048) protocolError()
+        // The account list is a convenience for the game's launch options; a failure must never cost the launch.
+        val accounts = gameAccounts(logon)
         state = State.FINISHED
-        credential
+        Login(credential, accounts)
     }
+
+    /**
+     * The WoW accounts under this Battle.net login, named as the game knows them. Without a name the game
+     * asks which account to use; the launch options carry it as GAME_ACCOUNT with the account's REGION.
+     * An unreadable list is reported as empty, never as a guess.
+     */
+    private fun gameAccounts(record: BgsProtocol.Message): List<GameAccount> {
+        return try {
+            val accounts = mutableListOf<GameAccount>()
+            for (field in record.fields.filter { it.number == HANDLE_FIELD }) {
+                val handle = field.bytes ?: return emptyList()
+                val items = BgsProtocol.parse(handle)
+                // GameAccountHandle: program = 2, region = 3, encoded as varint or fixed32 by the service.
+                if (items.number(2) != WOW_TITLE) continue
+                val info = call(ACCOUNT_SERVICE, GET_GAME_ACCOUNT_INFO, BgsProtocol.bytes(1, handle)).bytes(1)
+                    ?: return emptyList()
+                val name = BgsProtocol.parse(info).bytes(2)?.toString(Charsets.UTF_8) ?: return emptyList()
+                val region = GAME_REGIONS[items.number(3).toInt()] ?: return emptyList()
+                if (!launchName(name)) return emptyList()
+                accounts += GameAccount(name, region)
+            }
+            accounts
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun launchName(name: String): Boolean =
+        name.length in 1..64 && name.trim() == name && name.all { it.code in 32..126 }
 
     override fun close() {
         state = State.CLOSED
@@ -255,8 +291,13 @@ class BgsClient internal constructor(
         // FNV-1a of bnet.protocol.authentication.v2.client.AuthenticationListener.
         internal const val AUTHENTICATION_LISTENER = 0x9da8116bL
         internal const val RESPONSE_SERVICE = 254L
+        internal const val ACCOUNT_SERVICE = 0x22dc2464L
         internal const val WOW_TITLE = 0x576f57L
+        private const val GET_GAME_ACCOUNT_INFO = 201L
+        private const val HANDLE_FIELD = 2
         private const val MAX_NOTIFICATIONS = 4096
+        // Game account regions as the launch settings name them; Battle.net writes REGION=EU for region 2.
+        private val GAME_REGIONS = mapOf(1 to "US", 2 to "EU", 3 to "KR", 4 to "TW", 5 to "CN")
 
         fun isTrustedSignInUrl(url: String): Boolean = try {
             val parsed = URI(url)

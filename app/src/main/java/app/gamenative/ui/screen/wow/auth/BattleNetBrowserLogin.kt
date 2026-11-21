@@ -13,6 +13,7 @@ import app.gamenative.PluviaApp
 import app.gamenative.events.AndroidEvent
 import app.gamenative.ui.screen.wow.GameRegion
 import app.gamenative.ui.screen.wow.WowClientDownloader
+import app.gamenative.utils.SharedCache
 import com.winlator.container.Container
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -30,6 +31,9 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
@@ -41,6 +45,7 @@ internal object BattleNetBrowserLogin {
     private val mutableUi = MutableStateFlow<Ui>(Ui.Idle)
     val ui = mutableUi.asStateFlow()
     private var active: Attempt? = null
+    private var lastLaunch: Launch? = null
 
     sealed interface Ui {
         data object Idle : Ui
@@ -70,6 +75,29 @@ internal object BattleNetBrowserLogin {
         WebStorage.getInstance().deleteAllData()
     }
 
+    /**
+     * Copies what the last launch left on the client's side into the shared cache, which survives reinstalls and
+     * needs no root: the game's own logs and Config.wtf, the helper's stage log, and the launch-option keys.
+     * The client only reports a rejected session in its own log and on screen, so this is the app's only view of
+     * why the server dropped a credential that Battle.net had just issued.
+     */
+    fun exportClientState(context: Context, gameRoot: File, container: Container) {
+        val target = File(SharedCache.dir(context, "logs"), "wow-client")
+        val prefix = File(container.rootDir, ".wine")
+        val config = File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/WTF/Config.wtf")
+        diag(context, "export: ${target.path}")
+        copyFiles(File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/Logs"), target, context)
+        copyFile(config, target, context)
+        copyFile(File(gameRoot, WowClientDownloader.BUILD_INFO), target, context)
+        copyFile(File(prefix, "drive_c/wow-session/bridge.log"), target, context)
+        val reported = setOf("portal", "textLocale", "audioLocale", "agentUID", "accountName", "gxApi")
+        runCatching { config.readLines() }.getOrNull()?.forEach { line ->
+            val key = line.removePrefix("SET ").substringBefore(' ')
+            if (line.startsWith("SET ") && key in reported) diag(context, "config: $line")
+        }
+        diag(context, "launch options: ${launchOptions(File(prefix, "user.reg"))}")
+    }
+
     /** Runs after Wine prefix initialization. Container executable remains the game for window tracking. */
     @Synchronized
     fun start(context: Context, container: Container): String {
@@ -81,6 +109,9 @@ internal object BattleNetBrowserLogin {
             ?.get("Version")?.substringAfterLast('.')?.toIntOrNull()?.takeIf { it > 0 }
             ?: throw IOException("Cannot read the installed game build for browser login")
         val region = GameRegion.current(context, gameRoot.path)
+        exportClientState(context, gameRoot, container)
+        lastLaunch = Launch(context, gameRoot, container)
+        diag(context, "start: region=${region.name} build=$build")
         File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/login.txt").delete()
         File(gameRoot, "${WowClientDownloader.LEGACY_FLAVOR_DIR}/login.txt").delete()
         check(!File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/login.txt").exists()) {
@@ -105,7 +136,7 @@ internal object BattleNetBrowserLogin {
                 "cn.actual.battlenet.com.cn"
             else
                 "${region.name.lowercase()}.actual.battle.net"
-            val attempt = Attempt(bridge, request, host, build)
+            val attempt = Attempt(context, bridge, request, host, build)
             active = attempt
             mutableUi.value = Ui.Waiting("Starting Battle.net browser login…")
             // One deadline covers Wine startup, queues and browser interaction, below the helper's 15 minutes.
@@ -118,8 +149,10 @@ internal object BattleNetBrowserLogin {
             // rest of the command line to CreateProcessW(NULL, cmdline), whose loader does NOT
             // strip quotes from the first token (find_exe_file fails on a quoted path). The
             // paths contain no spaces, so leave them unquoted.
-            return "C:\\wow-session\\$ASSET C:\\wow-session\\${request.name} " +
+            val command = "C:\\wow-session\\$ASSET C:\\wow-session\\${request.name} " +
                 "${container.executablePath} -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11"
+            diag(context, "command: $command")
+            return command
         } catch (error: Exception) {
             bridge.close()
             request.delete()
@@ -137,20 +170,28 @@ internal object BattleNetBrowserLogin {
                     client.webChallenge(device, attempt.build)
                 }
                 publish(attempt, Ui.Browser(url))
+                diag(attempt.context, "challenge: ${BrowserAuthUrl.displayOrigin(url) ?: "unexpected origin"}")
                 val ticket = withTimeout(15 * 60_000L) { attempt.ticket.await() }
+                diag(attempt.context, "ticket: ${ticket.size} bytes")
                 try {
                     publish(attempt, Ui.Waiting("Completing Battle.net sign-in…"))
                     // A fresh connection avoids holding a BGS socket open while the user handles CAPTCHA or 2FA.
-                    val token = withClient(attempt) { client ->
+                    val login = withClient(attempt) { client ->
                         client.connect()
                         client.webChallenge(device, attempt.build)
                         client.verifyAndGenerateGameToken(ticket)
                     }
+                    // A sole account is passed as the game account; with several (or an unreadable list) the game
+                    // asks, as the reference implementation does, instead of guessing a licence.
+                    val account = login.accounts.singleOrNull()
+                    diag(attempt.context, "token: ${login.token.size} bytes, accounts: ${login.accounts.size}" +
+                        (account?.let { " region=${it.region}" } ?: ""))
                     try {
                         publish(attempt, Ui.Waiting("Starting WoW with the Battle.net session…"))
-                        peer.launch(token)
+                        peer.launch(login.token, account)
+                        diag(attempt.context, "helper: STARTED")
                     } finally {
-                        token.fill(0)
+                        login.token.fill(0)
                     }
                 } finally {
                     ticket.fill(0)
@@ -239,6 +280,7 @@ internal object BattleNetBrowserLogin {
     @Synchronized
     private fun fail(attempt: Attempt, message: String) {
         if (active !== attempt || attempt.cancelled || mutableUi.value is Ui.Idle) return
+        diag(attempt.context, "failed: $message")
         val failure = Ui.Failed(message)
         mutableUi.value = failure
         cancel(preserveFailure = true)
@@ -252,6 +294,9 @@ internal object BattleNetBrowserLogin {
 
     @Synchronized
     fun guestExited() {
+        // The game has released its logs by now; the next launch would otherwise overwrite them before the export.
+        lastLaunch?.let { exportClientState(it.context, it.gameRoot, it.container) }
+        lastLaunch = null
         val attempt = active
         if (attempt != null && mutableUi.value !is Ui.Idle && mutableUi.value !is Ui.Failed) {
             val log = attempt.bridgeLog().trim()
@@ -262,7 +307,66 @@ internal object BattleNetBrowserLogin {
         cancel(preserveFailure = true)
     }
 
-    private class Attempt(val bridge: SessionBridge, val request: File, val host: String, val build: Int) {
+    /** Appends one line to the shared-cache login log; never records page content, cookies or credentials. */
+    private fun diag(context: Context, message: String) {
+        try {
+            val dir = SharedCache.dir(context, "logs")
+            dir.mkdirs()
+            val stamp = SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(Date())
+            File(dir, "browser-login.log").appendText("$stamp $message\n")
+        } catch (_: Throwable) {
+            // Diagnostics must never break sign-in.
+        }
+    }
+
+    private fun copyFiles(from: File, to: File, context: Context) {
+        val files = from.listFiles() ?: return
+        to.mkdirs()
+        files.filter { it.isFile }.forEach { copyFile(it, to, context) }
+    }
+
+    private fun copyFile(file: File, to: File, context: Context) {
+        if (!file.isFile || file.length() !in 1..MAX_COPY_BYTES) return
+        to.mkdirs()
+        runCatching { file.copyTo(File(to, file.name), overwrite = true) }
+            .onFailure { diag(context, "copy ${file.name}: ${it.javaClass.simpleName}") }
+    }
+
+    /** The launch-option values the client reads; sizes and timestamps only, never the protected token. */
+    private fun launchOptions(reg: File): String {
+        val lines = runCatching { reg.takeIf { it.isFile }?.readLines() }.getOrNull()
+            ?: return "user.reg unreadable"
+        val found = mutableListOf<String>()
+        var inside = false
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith("[")) {
+                inside = trimmed.lowercase(Locale.ROOT)
+                    .startsWith("[software\\\\blizzard entertainment\\\\battle.net\\\\launch options")
+                continue
+            }
+            if (!inside || trimmed.isEmpty() || trimmed.startsWith("#")) continue
+            val name = trimmed.substringBefore('=').trim('"')
+            val value = trimmed.substringAfter('=', "")
+            when (name) {
+                "WEB_TOKEN" -> found += "WEB_TOKEN=${value.replace("\\", "").length / 2}B"
+                "ACCOUNT_TS", "GAME_ACCOUNT", "REGION" -> found += "$name=${value.trim('"')}"
+            }
+        }
+        return if (found.isEmpty()) "none" else found.joinToString(" ")
+    }
+
+    private const val MAX_COPY_BYTES = 4L * 1024 * 1024
+
+    private class Launch(val context: Context, val gameRoot: File, val container: Container)
+
+    private class Attempt(
+        val context: Context,
+        val bridge: SessionBridge,
+        val request: File,
+        val host: String,
+        val build: Int,
+    ) {
         val ticket = CompletableDeferred<ByteArray>()
         val client = AtomicReference<BgsClient?>()
         val ticketBytes = AtomicReference<ByteArray?>()

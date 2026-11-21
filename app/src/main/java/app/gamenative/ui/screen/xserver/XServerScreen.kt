@@ -3661,7 +3661,9 @@ private fun setupXEnvironment(
 
         envVars.putAll(container.envVars)
         // Wine logging costs CPU on every FIXME/ERR. Keep it off for play; the preference turns it back on.
-        envVars.put("WINEDEBUG", if (enableWineDebug) "err+all" else "-all")
+        // +debugstr forwards the client's own OutputDebugString diagnostics to last-run.log; unlike +seh it is
+        // cheap and does not trip the anti-cheat timing check. The client reports a refused session only there.
+        envVars.put("WINEDEBUG", if (enableWineDebug) "err+all,+debugstr" else "-all,+debugstr")
         envVars.remove("DXVK_FRAME_RATE")
         envVars.remove("VKD3D_FRAME_RATE")
         if (!envVars.has("WINEESYNC")) envVars.put("WINEESYNC", "1")

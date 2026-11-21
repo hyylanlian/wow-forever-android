@@ -21,7 +21,7 @@ that launch.
 | :--- | :--- |
 | `ui/screen/wow/auth/BattleNetBrowserLogin.kt` | Orchestrator: opens the bridge, launches the helper, drives the failure dialog. |
 | `ui/screen/wow/auth/SessionBridge.kt` | `127.0.0.1` `ServerSocket`, nonce-authenticated handshake, 4-byte big-endian length framing. |
-| `ui/screen/wow/auth/BgsClient.kt` / `BgsProtocol.kt` | Battle.net service protocol over TLS to port 1119; produces the sign-in URL and exchanges the ST ticket for a game credential. |
+| `ui/screen/wow/auth/BgsClient.kt` / `BgsProtocol.kt` | Battle.net service protocol over TLS to port 1119; produces the sign-in URL, exchanges the ST ticket for a game credential, and names the login's WoW accounts. |
 | `ui/screen/wow/auth/BrowserAuthUrl.kt` | Allowlist for the sign-in page (hosts, redirects, `ST=` parsing). |
 | `ui/screen/wow/auth/BattleNetWebDialog.kt` | WebView host for the sign-in page. |
 | `tools/wow-session-bridge/` | The ARM64 helper (`bridge.c`, `protocol.c`, `device_id.c`) that runs inside the prefix. |
@@ -50,9 +50,11 @@ sequenceDiagram
     UI->>UI: user signs in (NetEase account + code)
     UI->>SB: ST ticket
     SB->>BGS: AuthenticationService.VerifyAndGenerateToken( ticket )
-    BGS->>SB: launch credential
-    SB->>H: frame(credential)
-    H->>H: CryptProtectData, write WEB_TOKEN + ACCOUNT_TS
+    BGS->>SB: launch credential + LogonRecord with game-account handles
+    SB->>BGS: AccountService.GetGameAccountInfo( each WoW handle )
+    BGS->>SB: account names and regions
+    SB->>H: frame(credential), frame("NAME\nREGION" or empty)
+    H->>H: CryptProtectData, write WEB_TOKEN + ACCOUNT_TS (+ GAME_ACCOUNT/REGION)
     H->>G: CreateProcessW(game.exe -launcherlogin -uid wowf -d3d11)
     H->>SB: "STARTED"
     SB->>UI: done
@@ -74,7 +76,7 @@ shows that log so a locked-down launch is never silent.
 | 8 | receive the launch credential |
 | 9 | sanity check the game path, no `login.txt`, build command line |
 | 10 | `CryptProtectData` |
-| 11 | write `WEB_TOKEN` / `ACCOUNT_TS`, flush, drop stale keys |
+| 11 | write `WEB_TOKEN` / `ACCOUNT_TS`, write `GAME_ACCOUNT`/`REGION` for the sole account (or drop them), flush |
 | 12 | `CreateProcessW`, send `STARTED`, focus the game window, wait for it |
 
 ## Pitfalls (all of these were real)
@@ -134,6 +136,13 @@ shows that log so a locked-down launch is never silent.
 17. Delete `_forever_/login.txt` before starting browser login: an empty file selects the password
     path instead of the launcher session.
 18. `Local\WoWForever.SessionBridge` is per prefix; a stale helper holds it and stage 3 fails.
+19. A Battle.net login may hold several WoW accounts. The game starts as the account named by
+    `GAME_ACCOUNT` with its `REGION` (`US`/`EU`/`KR`/`TW`/`CN`); without them it asks in game, and a
+    pair left from an earlier login must be dropped. The bridge carries a sole account's name and
+    region after the credential frame (an empty frame when there is no sole account), and the helper
+    writes both values next to the ticket. Names come from `AccountService.GetGameAccountInfo`
+    (hash `0x22dc2464`, method 201) for the handles in the LogonRecord; a lookup failure leaves the
+    values unset rather than guessing a licence.
 
 ## Troubleshooting
 
@@ -146,6 +155,28 @@ shows that log so a locked-down launch is never silent.
 | `stage 8 failed` | Android side aborted before sending the credential | Read the dialog message: it names the failing step |
 | `Browser sign-in could not start the game (…)` | Unexpected exception on the Android side | The parenthesised class identifies the layer; `JSONException` means a malformed device frame |
 | `unsupported sign-in address` | Redirect outside the allowlist | Add the host to `BrowserAuthUrl` |
+
+## Diagnostics
+
+The client reports a refused session only in its own log and on screen — never to the app — so every
+launch through `BattleNetBrowserLogin.start` first copies what the previous run left behind into the
+shared cache, readable without root or adb:
+
+```
+/sdcard/Download/WoWForever/logs/
+  browser-login.log   sign-in stages: region, build, command, challenge host, ticket/token sizes,
+                      helper STARTED, failure text. No cookies, URLs or credentials.
+  wow-client/         the last run's `_forever_/Logs/*.log` and `WTF/Config.wtf`, `.build.info`,
+                      and the helper's `bridge.log` (overwritten on every launch)
+```
+
+`WINEDEBUG=-all,+debugstr` additionally forwards the client's `OutputDebugString` diagnostics to
+`last-run.log` in the same directory. `+debugstr` is cheap and, unlike `+seh`, does not trip the
+anti-cheat timing check.
+
+`browser-login.log`'s `launch options:` line lists the `WEB_TOKEN` size, `ACCOUNT_TS`, `GAME_ACCOUNT`
+and `REGION` values of the launch-options key as the previous launch left them; the protected token
+itself is never read.
 
 ## Security notes
 

@@ -63,12 +63,22 @@ internal class SessionBridge : Closeable {
 
         fun device(): ByteArray = readFrame(4096)
 
-        fun launch(token: ByteArray) {
+        /**
+         * Hands over the credential and the WoW account the game should start for. An empty account frame
+         * makes the helper drop `GAME_ACCOUNT`/`REGION`, leaving the game to ask which account to use.
+         */
+        fun launch(token: ByteArray, account: BgsClient.GameAccount?) {
             require(token.size in 1..2048 && token.all { (it.toInt() and 255) in 32..126 }) {
                 "Invalid game credential"
             }
             output.writeInt(token.size)
             output.write(token)
+            val choice = account?.let { "${it.name}\n${it.region}".toByteArray(Charsets.US_ASCII) }
+            require(choice == null || (choice.size in 3..67 && choice.all { (it.toInt() and 255) in 32..126 })) {
+                "Invalid game account"
+            }
+            output.writeInt(choice?.size ?: 0)
+            if (choice != null) output.write(choice)
             output.flush()
             val status = readFrame(128).toString(Charsets.US_ASCII)
             if (status != "STARTED") {

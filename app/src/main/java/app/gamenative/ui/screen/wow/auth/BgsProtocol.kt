@@ -30,6 +30,12 @@ internal object BgsProtocol {
             it.integer
         } ?: default
 
+        /** A numeric field whatever its wire type: the game-account protos use both varint and fixed32. */
+        fun number(number: Int, default: Long = 0): Long = single(number)?.let {
+            if (it.wire != 0 && it.wire != 5) fail()
+            it.integer
+        } ?: default
+
         fun bytes(number: Int): ByteArray? = single(number)?.let {
             if (it.wire != 2) fail()
             it.bytes

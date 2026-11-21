@@ -103,6 +103,17 @@ static int receive_token(SOCKET peer, BYTE token[BRIDGE_TOKEN_LIMIT], DWORD *len
     return 1;
 }
 
+/* "NAME\nREGION", or an empty frame when the Android side could not name a sole account. */
+static int receive_account(SOCKET peer, char account[BRIDGE_ACCOUNT_LIMIT + 1], DWORD *length) {
+    BYTE header[4];
+    if (!transfer(peer, header, sizeof(header), 0)) return 0;
+    uint32_t size = bridge_decode_length(header);
+    if (size > BRIDGE_ACCOUNT_LIMIT) return 0;
+    if (size && !transfer(peer, account, size, 0)) return 0;
+    *length = size;
+    return 1;
+}
+
 static int make_proof(const char *domain, const BYTE nonce[BRIDGE_NONCE_SIZE], BYTE proof[32]) {
     HCRYPTPROV provider = 0;
     HCRYPTHASH hash = 0;
@@ -121,6 +132,26 @@ static int make_proof(const char *domain, const BYTE nonce[BRIDGE_NONCE_SIZE], B
 static int remove_value(HKEY key, const char *name) {
     LONG result = RegDeleteValueA(key, name);
     return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
+}
+
+/* The game starts as the account these values name; without one it asks in game, so an old pair must go. */
+static int write_game_account(HKEY key, const char *account, DWORD length) {
+    if (length == 0) return remove_value(key, "GAME_ACCOUNT") && remove_value(key, "REGION");
+    const char *separator = memchr(account, '\n', length);
+    if (!separator || separator == account) return 0;
+    size_t name_length = (size_t)(separator - account);
+    size_t region_length = length - name_length - 1;
+    if (name_length > 64 || region_length != 2) return 0;
+    for (size_t i = 0; i < name_length; i++)
+        if (account[i] < 32 || account[i] >= 127) return 0;
+    for (size_t i = 0; i < region_length; i++)
+        if (account[name_length + 1 + i] < 'A' || account[name_length + 1 + i] > 'Z') return 0;
+    char name[65];
+    memcpy(name, account, name_length);
+    name[name_length] = 0;
+    return RegSetValueExA(key, "GAME_ACCOUNT", 0, REG_SZ, (const BYTE *)name, (DWORD)name_length + 1) == 0 &&
+           RegSetValueExA(key, "REGION", 0, REG_SZ, (const BYTE *)(account + name_length + 1),
+                          (DWORD)region_length + 1) == 0;
 }
 
 static int no_login_file(const WCHAR *directory) {
@@ -170,6 +201,8 @@ int wmain(int argc, WCHAR **argv) {
     BYTE server_proof[32] = {0}, received_proof[32] = {0};
     BYTE token[BRIDGE_TOKEN_LIMIT] = {0};
     DWORD token_size = 0;
+    char account[BRIDGE_ACCOUNT_LIMIT + 1] = {0};
+    DWORD account_size = 0;
     DATA_BLOB protected_token = {0};
     DATA_BLOB entropy = {sizeof(entropy_bytes), entropy_bytes};
     HKEY key = NULL;
@@ -226,7 +259,8 @@ int wmain(int argc, WCHAR **argv) {
         !send_frame(peer, device_json, (uint32_t)device_used)) goto done;
     SecureZeroMemory(device_json, sizeof(device_json));
     result = 8;
-    if (!receive_token(peer, token, &token_size)) goto done;
+    if (!receive_token(peer, token, &token_size) ||
+        !receive_account(peer, account, &account_size)) goto done;
 
     result = 9;
     if (wcslen(argv[2]) >= sizeof(directory) / sizeof(directory[0])) goto done;
@@ -260,7 +294,7 @@ int wmain(int argc, WCHAR **argv) {
     snprintf(timestamp, sizeof(timestamp), "%lld", (long long)now);
     if (RegSetValueExA(key, "ACCOUNT_TS", 0, REG_SZ,
                        (BYTE *)timestamp, (DWORD)strlen(timestamp) + 1) ||
-        !remove_value(key, "GAME_ACCOUNT") || !remove_value(key, "REGION") || RegFlushKey(key)) goto done;
+        !write_game_account(key, account, account_size) || RegFlushKey(key)) goto done;
 
     result = 12;
     STARTUPINFOW startup = {.cb = sizeof(startup)};
@@ -281,6 +315,7 @@ done:
     SecureZeroMemory(server_proof, sizeof(server_proof));
     SecureZeroMemory(received_proof, sizeof(received_proof));
     SecureZeroMemory(token, sizeof(token));
+    SecureZeroMemory(account, sizeof(account));
     SecureZeroMemory(device_json, sizeof(device_json));
     if (protected_token.pbData) {
         SecureZeroMemory(protected_token.pbData, protected_token.cbData);
